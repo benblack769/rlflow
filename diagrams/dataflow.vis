@@ -1,14 +1,13 @@
 digraph G {
-	learn [label="Learner", color="red"];
-	act [label="Actor Policy", color="red"];
-	env [label="Environment", color="green"];
-  add [label="Adder", color="green"];
-  rep [label="Replay sampler", color="green"];
+node[penwidth=2];
+	learn [label="Learner"];
+	act [label="Actor Policy"];
+	env [label="Environment"];
+  rep [label="Replay sampler"];
 	learn -> act [label="Parameters"];
 	act -> env [label="Actions"];
 	env -> act [label="Observations"];
-	env -> add [label="States"];
-  add -> rep [label="Transitions"];
+	env -> rep [label="States"];
 	rep -> learn [label="Batched Transitions"];
 	learn -> rep [label="Priorities"];
 }

@@ -1,15 +1,27 @@
 digraph G {
-	learn [label="Learner",color="red"];
-	act [label="Actor"];
-	env [label="Environment"];
-  add [label="Adder"];
-  data_store [label="Data Store"];
+node[penwidth=2];
+node[color="red"];
+	learn [label="Learner"];
+  env [label="Environment"];
+  policy [label="Policy"];
+node[color="blue"];
+  act [label="Actor"];
+  async_policy [label="Policy delayer"];
   rep [label="Replay sampler"];
+  add [label="Adder"];
+node[color="black"];
+  vecenv [label="Vector Environment"];
+  data_store [label="Data Store"];
   batch_gen [label="Batch generator"];
-	learn -> act [label="Parameters"];
-	act -> env [label="Actions"];
-	env -> act [label="Observations"];
-	env -> add [label="States"];
+	learn -> async_policy [label="Parameters"];
+  async_policy -> policy [label="Parameters"];
+  act -> policy [label="Observations,RNN states"]
+  policy -> act [label="RNN States,Actions"]
+	act -> vecenv [label="Actions"];
+	vecenv -> act [label="Observations/dones"];
+  vecenv -> add [label="States"];
+  vecenv -> env [label="Actions"];
+  env -> vecenv [label="States"];
   add -> data_store [label="Transitions"];
   data_store -> rep [label="Data IDs"];
   rep -> batch_gen [label="Batch IDs"];
