@@ -1,20 +1,30 @@
-### RL Pipelines
+### RL-Flow
 
-RL Pipelines is a set of platform agnostic tools that handles the data flow of reinforcement learning in a performant and composable way.
+RL Flow is a set of platform agnostic tools that handles the data flow of reinforcement learning in a performant and composable way.
 
-It is designed after Deepmind ACME ([code](https://github.com/deepmind/acme), [paper](https://arxiv.org/abs/2006.00979)), but does not depend on tensorflow or any other machine learning framework.
+It is designed after Deepmind ACME ([code](https://github.com/deepmind/acme), [paper](https://arxiv.org/abs/2006.00979)).
+Like ACME, the design philosophy is to separate the various parts of the RL data pipeline in a simple, composable manner with enough built-in functionality to implement simple RL baselines in two dozen lines of code and state of the art methods in a hundred lines of code. A user of different needs and different level of expertise can use the tools at different levels.
 
-Features
-
-* Vector environments to parallelize environment stepping
-* Adders to transform step-wise data into a trainable format (built in options include normal transitions, n-step transitions, and sequences)
-* Sample strategies for the learner to train on. Options include a first-in-first out pipeline, uniform replay buffer, prioritized replay buffer.
-* Multiprocessing and multiprocessing agent utilities
-* Environment loop to handle all this by
-
-This data flow looks roughly like this
+The modern RL data flow looks roughly like this:
 
 ![data flow](diagrams/dataflow.svg)
+
+The user is expected to provide the actor's policy, the learner, and an environment. We provide utilities to wrap gym and pettingzoo environments, make implementing the actor and environment easier, and also add enough functionality in the adder, and replay sampler to implement state of the art methods.
+
+## Example code
+
+You will be expected to implement the Learner, Policy interfaces and provide a suitable gym environment.
+
+### Learner class
+
+The learner class has several methods
+
+```
+```
+
+## Components
+
+Internally, there are many more components. These components can also be used independently of the higher level interface above. The data flow here looks a bit more complicated
 
 ### Learner class
 
