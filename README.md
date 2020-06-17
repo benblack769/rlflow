@@ -19,7 +19,7 @@ While this diagram looks overwhelming, most of this does not need to be customiz
 
 * RED means the user is expected to fully customize this feature
 * BLUE means the user needs to make a selection among the options in the library (with the option to customize further)
-* BLACK means this part of the pipeline is solved and should not be customized unless something is really werid. 
+* BLACK means this part of the pipeline is solved and should not be customized unless something is really weird. 
 
 The user is expected to provide the actor's policy, the learner, and an environment. We provide utilities to wrap gym and pettingzoo environments, make implementing the actor and environment easier, and also add enough functionality in the adder, and replay sampler to implement state of the art methods.
 

@@ -1,7 +1,11 @@
 
 class TransitionAdder:
-    def __init__(self, on_generate):
+    def __init__(self):
         self.last_observation = None
+        self.on_generate = None
+
+    def set_generate_callback(self, on_generate):
+        assert self.on_generate is None, "set_generate_callback should only be called once"
         self.on_generate = on_generate
 
     def add(self, obs, rew, done, info):

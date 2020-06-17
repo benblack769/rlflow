@@ -9,7 +9,7 @@ class Policy:
 
 
 class StatelessPolicy(Policy):
-    def step(self, observations, infos):
+    def calc_action(self, observations):
         '''
         calculate action based off observations
         '''
@@ -17,7 +17,7 @@ class StatelessPolicy(Policy):
 
 
 class RecurrentPolicy(Policy):
-    def step(self, observations, states, infos):
+    def calc_action(self, observations, states):
         '''
         Args:
         observations: a batch of single-step observations from the environment
