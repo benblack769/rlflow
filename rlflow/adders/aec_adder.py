@@ -1,12 +1,17 @@
 
-class AECAdder:
-    def __init__(self, on_generate):
+class AECBaseAdder:
+    def get_transition_example(self):
+        '''
+        returns: list of numpy arrays with the correct shape and dtype of the result
+        '''
+
+    def set_generate_callback(self, on_generate):
         '''
         args:
         on_generate: The callback that is called when a new transition is generated
         '''
 
-    def add(self, agent, obs, rewards, dones, env_dones, passes, info):
+    def add(self, agent, obs, action, rewards, dones, env_dones, passes, info):
         '''
         an agent's,
         observation, reward, done, and info

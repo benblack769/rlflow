@@ -11,12 +11,16 @@ def main():
     obs_size, = env.observation_space.shape
     act_size = env.action_space.n
     policy = FCPolicy(obs_size, act_size, 64)
+    data_store_size = 128
+    batch_size = 16
     run_loop(
         DQNLearner(policy, 0.01, 0.99),
         NoUpdatePolicyDelayer(),
         StatelessActor(policy),
         lambda: gym.make("Acrobot-v1"),
-        TransitionAdder,
-        UniformSampleScheme()
+        lambda: TransitionAdder(env.observation_space, env.action_space),
+        UniformSampleScheme(data_store_size),
+        data_store_size,
+        batch_size
     )
 main()

@@ -1,5 +1,6 @@
 import torch
 from rlflow.base_policy import StatelessPolicy
+import numpy as np
 
 class FCPolicy(StatelessPolicy):
     def __init__(self, in_dim, out_dim, hidden_dim):
@@ -32,17 +33,26 @@ class DQNLearner:
 
     def learn_step(self, transition_batch):
         model = self.policy.model
-        Otm1, rew, action, Ot = transition_batch
+        Otm1, action, rew, done, Ot = transition_batch
+        Otm1 = torch.tensor(Otm1)
+        action = torch.tensor(action)
+        rew = torch.tensor(rew)
+        done = torch.tensor(done)
+        Ot = torch.tensor(Ot)
 
         with torch.no_grad():
-            future_rew = self.gamma * np.max(model(Ot),axis=1)
+            future_rew = torch.max(model(Ot),axis=1).values
+            discounted_fut_rew = self.gamma * future_rew
 
         total_rew = rew + future_rew
 
         model.zero_grad()
         qvals = model(Otm1)
-        taken_qvals = qvals[torch.arange(len(qvals)),action]
+        action = action.type(torch.long)
+        taken_qvals = qvals[torch.arange(len(qvals),dtype=torch.int64),action]
 
-        q_loss = (taken_qvals - total_rew)**2
-        loss.backward()
-        optimizer.step()
+        q_loss = torch.mean((taken_qvals - total_rew)**2)
+        q_loss.backward()
+        self.optimizer.step()
+        final_loss = q_loss.cpu().detach().numpy()
+        print(final_loss,flush=True)

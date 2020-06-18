@@ -14,16 +14,15 @@ class UniformSampleScheme:
         self.sample_idxs[id] = self.num_idxs
         self.num_idxs += 1
     def sample(self, batch_size):
-        if len(self.data_idxs) < batch_size:
+        if self.num_idxs < batch_size:
             return None
         else:
             idxs = self.np_random.randint(0,self.num_idxs,size=batch_size)
             return self.data_idxs[idxs]
-    def remove(self, ids):
-        for id in ids:
-            idx = self.sample_idxs[id]
-            if idx != self.num_idxs-1:
-                new_id = self.data_idxs[self.num_idxs-1]
-                self.data_idxs[idx] = new_id
-                self.sample_idxs[new_id] = idx
-            self.num_idxs -= 1
+    def remove(self, id):
+        idx = self.sample_idxs[id]
+        if idx != self.num_idxs-1:
+            new_id = self.data_idxs[self.num_idxs-1]
+            self.data_idxs[idx] = new_id
+            self.sample_idxs[new_id] = idx
+        self.num_idxs -= 1
