@@ -15,13 +15,14 @@ def main():
     print(env.observation_space)
     obs_size, = env.observation_space.shape
     act_size = env.action_space.n
-    policy = FCPolicy(obs_size, act_size, 64)
+    device = "cpu"
+    policy = FCPolicy(obs_size, act_size, 64, device)
     data_store_size = 12800
     batch_size = 16
     logger = make_logger("log")
     run_loop(
         logger,
-        DQNLearner(policy, 0.001, 0.99, logger),
+        DQNLearner(policy, 0.001, 0.99, logger, device),
         OccasionalUpdate(10, policy),
         StatelessActor(policy),
         env_fn,

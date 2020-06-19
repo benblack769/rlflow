@@ -19,7 +19,8 @@ def run_data_manager(data_manager):
     while True:
         data_manager.update()
 
-def run_actor_loop(actor, n_envs, policy_delayer, vec_env):
+def run_actor_loop(actor_fn, n_envs, policy_delayer, vec_env):
+    actor = actor_fn()
     dones = np.zeros(n_envs,dtype=np.bool)
     infos = [{} for _ in range(n_envs)]
     obs = vec_env.reset()
@@ -30,12 +31,14 @@ def run_actor_loop(actor, n_envs, policy_delayer, vec_env):
         actions = actor.step(obs, dones, infos)
 
         obs, rews, dones, infos = vec_env.step(actions)
+        if act_step % 1000 == 0:
+            print("acted")
 
 def run_loop(
         logger,
-        learner,
+        learner_fn,
         policy_delayer,
-        actor,
+        actor_fn,
         environment_fn,
         adder_fn,
         replay_sampler,
@@ -47,7 +50,7 @@ def run_loop(
 
     example_env = environment_fn()
     example_adder = adder_fn()
-    n_envs = 8
+    n_envs = 64
     transition_example = example_adder.get_example_output()
     data_store = DataStore(transition_example, data_store_size)
     removal_scheme = FifoScheme()
@@ -75,10 +78,12 @@ def run_loop(
 
     mp.Process(target=run_batch_generator,args=(batch_samples, data_store, batch_generator, terminate_event)).start()
     mp.Process(target=run_data_manager,args=(data_manager,)).start()
-    mp.Process(target=run_actor_loop,args=(actor, n_envs, policy_delayer, vec_env)).start()
+    mp.Process(target=run_actor_loop,args=(actor_fn, n_envs, policy_delayer, vec_env)).start()
+
+    learner = learner_fn()
 
     for train_step in range(1000000):
-        policy_delayer.learn_step()
+        policy_delayer.learn_step(learner.policy)
 
         learn_batch = batch_generator.get_batch()
         if learn_batch is None:

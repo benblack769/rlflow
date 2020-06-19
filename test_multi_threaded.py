@@ -1,5 +1,5 @@
 from basic_example import FCPolicy, DQNLearner
-from rlflow.env_loops.single_threaded_env_loop import run_loop
+from rlflow.env_loops.multi_threaded_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -15,15 +15,16 @@ def main():
     print(env.observation_space)
     obs_size, = env.observation_space.shape
     act_size = env.action_space.n
-    policy = FCPolicy(obs_size, act_size, 64)
-    data_store_size = 12800
-    batch_size = 16
+    device = "cuda"
+    policy_fn = lambda: FCPolicy(obs_size, act_size, 64, device)
+    data_store_size = 128000
+    batch_size = 128
     logger = make_logger("log")
     run_loop(
         logger,
-        DQNLearner(policy, 0.001, 0.99, logger),
-        OccasionalUpdate(10, policy),
-        StatelessActor(policy),
+        lambda: DQNLearner(policy_fn(), 0.001, 0.99, logger, device),
+        OccasionalUpdate(10, FCPolicy(obs_size, act_size, 64, "cpu")),
+        lambda: StatelessActor(policy_fn()),
         env_fn,
         lambda: TransitionAdder(env.observation_space, env.action_space),
         DensitySampleScheme(data_store_size),
