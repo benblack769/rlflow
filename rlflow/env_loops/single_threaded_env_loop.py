@@ -6,12 +6,6 @@ import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
 
-# def get_example_output(env, adder_fn):
-#     info = {}
-#     def gen_callback(trans):
-#         info['trans'] = trans
-#     adder = adder_fn()
-#     adder.set_generate_callback(gen_callback)
 
 def run_loop(
         logger,

@@ -4,11 +4,15 @@ import gym
 from rlflow.policy_delayer.base import NoUpdatePolicyDelayer
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
-from rlflow.selectors.uniform import UniformSampleScheme
+from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 
+def env_fn():
+    return gym.make("CartPole-v0")
+
 def main():
-    env = gym.make("Acrobot-v1")
+    env = env_fn()
+    print(env.observation_space)
     obs_size, = env.observation_space.shape
     act_size = env.action_space.n
     policy = FCPolicy(obs_size, act_size, 64)
@@ -20,9 +24,9 @@ def main():
         DQNLearner(policy, 0.001, 0.99, logger),
         NoUpdatePolicyDelayer(),
         StatelessActor(policy),
-        lambda: gym.make("Acrobot-v1"),
+        env_fn,
         lambda: TransitionAdder(env.observation_space, env.action_space),
-        UniformSampleScheme(data_store_size),
+        DensitySampleScheme(data_store_size),
         data_store_size,
         batch_size
     )

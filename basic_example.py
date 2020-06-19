@@ -11,11 +11,17 @@ class FCPolicy(StatelessPolicy):
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim, out_dim),
         )
+        self.out_dim = out_dim
         self.model = model
 
     def calc_action(self, observations):
         observations = torch.tensor(observations)
-        return torch.argmax(self.model(observations),axis=1).detach().cpu().numpy()
+        greedy = torch.argmax(self.model(observations),axis=1).detach().cpu().numpy()
+        random = np.random.randint(0,self.out_dim,size=len(observations))
+        epsilon = 0.1
+        pick_rand = np.random.random(size=len(observations)) < epsilon
+        actions = np.where(pick_rand, random, greedy)
+        return actions
 
     def get_params(self):
         return list(self.model.parameters())
