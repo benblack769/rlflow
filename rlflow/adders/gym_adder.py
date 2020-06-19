@@ -1,6 +1,6 @@
 
 class GymBaseAdder:
-    def get_transition_example(self):
+    def get_example_output(self):
         '''
         returns: list of numpy arrays with the correct shape and dtype of the result
         '''

@@ -8,7 +8,7 @@ class TransitionAdder:
         self.observation_space = SpaceWrapper(observation_space)
         self.action_space = SpaceWrapper(action_space)
 
-    def get_transition_example(self):
+    def get_example_output(self):
         return (
             self.observation_space,
             self.action_space,

@@ -41,7 +41,7 @@ class DQNLearner:
         Ot = torch.tensor(Ot)
 
         with torch.no_grad():
-            future_rew = torch.max(model(Ot),axis=1).values
+            future_rew = ~done * torch.max(model(Ot),axis=1).values
             discounted_fut_rew = self.gamma * future_rew
 
         total_rew = rew + future_rew
@@ -55,4 +55,3 @@ class DQNLearner:
         q_loss.backward()
         self.optimizer.step()
         final_loss = q_loss.cpu().detach().numpy()
-        print(final_loss,flush=True)

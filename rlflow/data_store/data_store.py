@@ -77,9 +77,19 @@ class DataSaver:
         self.new_entries = new_entries
 
     def save_data(self, transition):
-        id = self.empty_entries.get()
+        if self.new_entries.full():
+            return
+        try:
+            id = self.empty_entries.get_nowait()
+        except queue.Empty:
+            return
+
         self.data_store.add_item(id, transition)
-        self.new_entries.put(id)
+
+        try:
+            self.new_entries.put_nowait(id)
+        except queue.Full:
+            return
 
 class BatchStore:
     def __init__(self, batch_size, transition_example):
