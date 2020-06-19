@@ -1,7 +1,7 @@
 from basic_example import FCPolicy, DQNLearner
 from rlflow.env_loops.single_threaded_env_loop import run_loop
 import gym
-from rlflow.policy_delayer.base import NoUpdatePolicyDelayer
+from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
 from rlflow.selectors import DensitySampleScheme
@@ -22,7 +22,7 @@ def main():
     run_loop(
         logger,
         DQNLearner(policy, 0.001, 0.99, logger),
-        NoUpdatePolicyDelayer(),
+        OccasionalUpdate(10, policy),
         StatelessActor(policy),
         env_fn,
         lambda: TransitionAdder(env.observation_space, env.action_space),

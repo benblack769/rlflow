@@ -24,11 +24,11 @@ class FCPolicy(StatelessPolicy):
         return actions
 
     def get_params(self):
-        return list(self.model.parameters())
+        return [param.detach().numpy() for param in self.model.parameters()]
 
     def set_params(self, params):
         for source,dest in zip(params, self.model.parameters()):
-            dest.data = source.data
+            dest.data = torch.tensor(source)
 
 class DQNLearner:
     def __init__(self, policy, lr, gamma, logger):

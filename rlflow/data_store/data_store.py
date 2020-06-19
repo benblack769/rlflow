@@ -113,7 +113,8 @@ class BatchStore:
         self.is_empty.clear()
 
     def get_batch(self):
-        self.is_full.wait()
+        if not self.is_full.is_set():
+            return None
 
         result = [entry.np_arr for entry in self.data]
 

@@ -1,6 +1,6 @@
 
 class Policy:
-    def set_weights(self, params):
+    def set_params(self, params):
         '''
         Sets the policy parameters to the argument.
         Used to transfer data from the learner to the actor

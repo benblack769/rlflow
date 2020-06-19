@@ -54,9 +54,9 @@ def run_loop(
     vec_env = SyncVectorEnv([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
     obs = vec_env.reset()
 
-    policy_delayer.set_policies(learner.policy, [actor.policy])
     for train_step in range(1000000):
-        policy_delayer.learn_step()
+        policy_delayer.learn_step(learner.policy)
+        policy_delayer.actor_step(actor.policy)
 
         data_manager.update()
 
