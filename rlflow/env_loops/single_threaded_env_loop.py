@@ -5,6 +5,7 @@ from rlflow.selectors.fifo import FifoScheme
 import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
+from rlflow.wrappers.adder_wrapper import AdderWrapper
 
 
 def run_loop(
@@ -19,14 +20,12 @@ def run_loop(
         batch_size
         ):
 
+
     example_env = environment_fn()
     example_adder = adder_fn()
     n_envs = 8
-    vec_env = SyncVectorEnv([environment_fn]*n_envs, example_env.observation_space, example_env.action_space)
-    obs = vec_env.reset()
     dones = np.zeros(n_envs,dtype=np.bool)
     infos = [{} for _ in range(n_envs)]
-    adders = [adder_fn() for _ in range(n_envs)]
 
     transition_example = example_adder.get_example_output()
     data_store = DataStore(transition_example, data_store_size)
@@ -36,16 +35,24 @@ def run_loop(
     batch_samples = mp.Queue(2)
     data_manager = DataManager(removal_scheme, replay_sampler, data_store_size, empty_entries, new_entries, batch_samples, batch_size)
 
-    for adder in adders:
-        saver = DataSaver(data_store, empty_entries, new_entries)
-        adder.set_generate_callback(saver.save_data)
-
     env_log_queue = mp.Queue()
-    logger_adders = [LoggerAdder() for _ in range(n_envs)]
-    for adder in logger_adders:
-        adder.set_generate_callback(env_log_queue.put)
 
     batch_generator = BatchStore(batch_size, transition_example)
+
+
+    def env_wrap_fn(*args):
+        env = environment_fn(*args)
+        adder = adder_fn()
+        saver = DataSaver(data_store, empty_entries, new_entries)
+        adder.set_generate_callback(saver.save_data)
+        env = AdderWrapper(env, adder)
+        logger_adder = LoggerAdder()
+        logger_adder.set_generate_callback(env_log_queue.put)
+        env = AdderWrapper(env, logger_adder)
+        return env
+
+    vec_env = SyncVectorEnv([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
+    obs = vec_env.reset()
 
     policy_delayer.set_policies(learner.policy, [actor.policy])
     for train_step in range(1000000):
@@ -56,10 +63,6 @@ def run_loop(
         actions = actor.step(obs, dones, infos)
 
         obs, rews, dones, infos = vec_env.step(actions)
-
-        for i in range(n_envs):
-            adders[i].add(obs[i],actions[i],rews[i],dones[i],infos[i])
-            logger_adders[i].add(obs[i],actions[i],rews[i],dones[i],infos[i])
 
         try:
             batch_idxs = batch_samples.get_nowait()
