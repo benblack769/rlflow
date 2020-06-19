@@ -1,9 +1,18 @@
 
 class Policy:
-    def set_weights(self):
+    def set_weights(self, params):
         '''
+        Sets the policy parameters to the argument.
+        Used to transfer data from the learner to the actor
         Needed for asynchronous actors.
-        Returns the parameters that the actor network needs
+        '''
+        raise NotImplementedError()
+
+    def get_params(self):
+        '''
+        Gets the policy parameters to the argument.
+        Used to transfer data from the learner to the actor
+        Needed for asynchronous actors.
         '''
         raise NotImplementedError()
 

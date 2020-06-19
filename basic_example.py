@@ -25,9 +25,10 @@ class FCPolicy(StatelessPolicy):
             dest.data = source.data
 
 class DQNLearner:
-    def __init__(self, policy, lr, gamma):
+    def __init__(self, policy, lr, gamma, logger):
         self.policy = policy
         self.gamma = gamma
+        self.logger = logger
         self.optimizer = torch.optim.Adam(self.policy.model.parameters(), lr=lr)
 
 
@@ -55,3 +56,4 @@ class DQNLearner:
         q_loss.backward()
         self.optimizer.step()
         final_loss = q_loss.cpu().detach().numpy()
+        self.logger.record("loss", final_loss)

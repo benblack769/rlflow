@@ -2,106 +2,74 @@ import collections
 import numpy as np
 from .segment_tree import SumSegmentTree, MinSegmentTree
 
-
-
-class PrioritizedSampleScheme:
-    def __init__(self, max_size, alpha):
+class DensitySampleScheme:
+    def __init__(self, max_size, max_priority=1e7, seed=None):
         """
-        Create Prioritized Replay buffer.
+        Samples based off density of their weight
 
-        See Also ReplayBuffer.__init__
-
-        :param size: (int) Max number of transitions to store in the buffer. When the buffer overflows the old memories
+        :param max_size: (int) Max number of transitions to store in the buffer. When the buffer overflows the old memories
             are dropped.
-        :param alpha: (float) how much prioritization is used (0 - no prioritization, 1 - full prioritization)
+        :param max_priority: (float) how much prioritization is used (0 - no prioritization, 1 - full prioritization)
         """
-        super().__init__(size)
-        assert alpha >= 0
-        self._alpha = alpha
+        assert max_priority > 0
 
         it_capacity = 1
-        while it_capacity < size:
+        while it_capacity < max_size:
             it_capacity *= 2
 
         self._it_sum = SumSegmentTree(it_capacity)
-        self._it_min = MinSegmentTree(it_capacity)
-        self.idx_mapper = {}
-        self._next_idx = 0
-        self._max_priority = 1.0
+
+        self.sample_idxs = np.zeros(max_size, dtype=np.int32)
+        self.data_idxs = np.zeros(max_size, dtype=np.int32)
+        self.num_idxs = 0
+        self.max_size = max_size
+        self.np_random = np.random.RandomState(seed)
+        self._max_priority = max_priority
 
     def add(self, id):
-        """
-        add a new transition to the buffer
+        assert self.num_idxs < self.max_size, "added element makes buffer greater than max size, make sure to remove element first"
+        idx = self.num_idxs
+        self.data_idxs[idx] = id
+        self.sample_idxs[id] = self.num_idxs
+        self.num_idxs += 1
 
-        :param obs_t: (Any) the last observation
-        :param action: ([float]) the action
-        :param reward: (float) the reward of the transition
-        :param obs_tp1: (Any) the current observation
-        :param done: (bool) is the episode done
-        """
-        idx = id
+        self._it_sum[idx] = self._max_priority
 
-        self._it_sum[idx] = self._max_priority ** self._alpha
-        self._it_min[idx] = self._max_priority ** self._alpha
+    def sample(self, batch_size):
+        if self.num_idxs < batch_size:
+            return None
+        else:
+            idxs = self._sample_proportional(batch_size)
+            ids = self.data_idxs[idxs]
+            return ids
 
     def _sample_proportional(self, batch_size):
-        mass = []
-        total = self._it_sum.sum(0, len(self._storage) - 1)
-        # TODO(szymon): should we ensure no repeats?
-        mass = np.random.random(size=batch_size) * total
+        total = self._it_sum.sum(0, self.num_idxs)
+        mass = self.np_random.random(size=batch_size) * total
         idx = self._it_sum.find_prefixsum_idx(mass)
         return idx
 
-    def sample(self, batch_size: int, beta: float = 0):
+    def remove(self, id):
+        idx = int(self.sample_idxs[id])
+        new_idx = self.num_idxs-1
+        if idx != new_idx:
+            new_id = self.data_idxs[new_idx]
+            self._it_sum[idx] = self._it_sum[new_idx]
+            self.data_idxs[idx] = new_id
+            self.sample_idxs[new_id] = idx
+        self.num_idxs = new_idx
+
+    def update_weights(self, ids, weights):
         """
-        Sample a batch of experiences.
-
-        compared to ReplayBuffer.sample
-        it also returns importance weights and idxes
-        of sampled experiences.
-
-        :param batch_size: (int) How many transitions to sample.
-        :param beta: (float) To what degree to use importance weights (0 - no corrections, 1 - full correction)
-        :param env: (Optional[VecNormalize]) associated gym VecEnv
-            to normalize the observations/rewards when sampling
-        :return:
-            - obs_batch: (np.ndarray) batch of observations
-            - act_batch: (numpy float) batch of actions executed given obs_batch
-            - rew_batch: (numpy float) rewards received as results of executing act_batch
-            - next_obs_batch: (np.ndarray) next set of observations seen after executing act_batch
-            - done_mask: (numpy bool) done_mask[i] = 1 if executing act_batch[i] resulted in the end of an episode
-                and 0 otherwise.
-            - weights: (numpy float) Array of shape (batch_size,) and dtype np.float32 denoting importance weight of
-                each sampled transition
-            - idxes: (numpy int) Array of shape (batch_size,) and dtype np.int32 idexes in buffer of sampled experiences
-        """
-        assert beta > 0
-
-        idxes = self._sample_proportional(batch_size)
-        weights = []
-        p_min = self._it_min.min() / self._it_sum.sum()
-        max_weight = (p_min * len(self._storage)) ** (-beta)
-        p_sample = self._it_sum[idxes] / self._it_sum.sum()
-        weights = (p_sample * len(self._storage)) ** (-beta) / max_weight
-        encoded_sample = self._encode_sample(idxes, env=env)
-        return tuple(list(encoded_sample) + [weights, idxes])
-
-    def update_priorities(self, idxes, priorities):
-        """
-        Update priorities of sampled transitions.
-
         sets priority of transition at index idxes[i] in buffer
         to priorities[i].
 
         :param idxes: ([int]) List of idxes of sampled transitions
-        :param priorities: ([float]) List of updated priorities corresponding to transitions at the sampled idxes
+        :param weights: ([float]) List of updated priorities corresponding to transitions at the sampled idxes
             denoted by variable `idxes`.
         """
-        assert len(idxes) == len(priorities)
-        assert np.min(priorities) > 0
-        assert np.min(idxes) >= 0
-        assert np.max(idxes) < len(self.storage)
-        self._it_sum[idxes] = priorities ** self._alpha
-        self._it_min[idxes] = priorities ** self._alpha
-
-        self._max_priority = max(self._max_priority, np.max(priorities))
+        assert len(ids) == len(weights)
+        assert np.min(weights) > 0
+        assert 0 <= np.min(ids) < self.max_size
+        idxes = self.sample_idxs[ids]
+        self._it_sum[idxes] = weights

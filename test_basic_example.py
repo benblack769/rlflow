@@ -1,5 +1,5 @@
 from basic_example import FCPolicy, DQNLearner
-from rlflow.env_loop import run_loop
+from rlflow.env_loops.single_threaded_env_loop import run_loop
 import gym
 from rlflow.policy_delayer.base import NoUpdatePolicyDelayer
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -17,7 +17,7 @@ def main():
     logger = make_logger("log")
     run_loop(
         logger,
-        DQNLearner(policy, 0.001, 0.99),
+        DQNLearner(policy, 0.001, 0.99, logger),
         NoUpdatePolicyDelayer(),
         StatelessActor(policy),
         lambda: gym.make("Acrobot-v1"),
