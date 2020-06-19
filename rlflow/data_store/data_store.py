@@ -41,10 +41,7 @@ class DataManager:
     def update(self):
         sample_result = self.sample_scheme.sample(self.batch_size)
         if sample_result is not None:
-            try:
-                self.batch_samples.put_nowait(sample_result)
-            except queue.Full:
-                pass
+            self.batch_samples.put(sample_result,timeout=5.0)
 
         while not self.empty_entries.full():
             if self.init_add_idx < self.max_entries:
