@@ -18,7 +18,7 @@ def main():
     device = "cuda"
     policy_fn = lambda: FCPolicy(obs_size, act_size, 64, device)
     data_store_size = 128000
-    batch_size = 128
+    batch_size = 64
     logger = make_logger("log")
     run_loop(
         logger,

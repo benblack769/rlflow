@@ -122,8 +122,8 @@
 <!-- data_store -->
 <g id="node9" class="node">
 <title>data_store</title>
-<ellipse fill="none" stroke="#000000" stroke-width="2" cx="111.9003" cy="-192" rx="48.1917" ry="18"/>
-<text text-anchor="middle" x="111.9003" y="-188.3" font-family="Times,serif" font-size="14.00" fill="#000000">Data Store</text>
+<ellipse fill="none" stroke="#000000" stroke-width="2" cx="111.9003" cy="-192" rx="50.0912" ry="18"/>
+<text text-anchor="middle" x="111.9003" y="-188.3" font-family="Times,serif" font-size="14.00" fill="#000000">Data Saver</text>
 </g>
 <!-- add&#45;&gt;data_store -->
 <g id="edge10" class="edge">
@@ -156,8 +156,8 @@
 <!-- data_store&#45;&gt;rep -->
 <g id="edge11" class="edge">
 <title>data_store&#45;&gt;rep</title>
-<path fill="none" stroke="#000000" d="M137.4896,-176.6464C160.5441,-162.8137 194.6895,-142.3264 220.5689,-126.7988"/>
-<polygon fill="#000000" stroke="#000000" points="222.5722,-129.6786 229.3463,-121.5324 218.9707,-123.6761 222.5722,-129.6786"/>
+<path fill="none" stroke="#000000" d="M137.8234,-176.4461C160.8496,-162.6304 194.7461,-142.2925 220.4914,-126.8453"/>
+<polygon fill="#000000" stroke="#000000" points="222.4526,-129.7503 229.2268,-121.6041 218.8511,-123.7479 222.4526,-129.7503"/>
 <text text-anchor="middle" x="217.4003" y="-144.8" font-family="Times,serif" font-size="14.00" fill="#000000">Data IDs</text>
 </g>
 <!-- data_store&#45;&gt;batch_gen -->
