@@ -2,6 +2,7 @@ from sb3_example import SB3Wrapper, SB3LearnWrapper, SB3OnlineLearnWrapper
 from rlflow.env_loops.single_threaded_env_loop import run_loop
 import gym
 from rlflow.policy_delayer.no_update import NoUpdate
+from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
 from rlflow.selectors import DensitySampleScheme
@@ -43,7 +44,7 @@ def main():
     run_loop(
         logger,
         learner,#A2CLearner(policy, 0.001, 0.99, logger, device),
-        NoUpdate(),
+        OccasionalUpdate(10, policy),
         StatelessActor(policy),
         env_fn,
         lambda: TransitionAdder(env.observation_space, env.action_space),

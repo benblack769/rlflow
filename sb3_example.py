@@ -69,9 +69,13 @@ class SB3LearnWrapper:
         batch_size = len(transition_batch[0])
         cur_obs, action, rew, done, last_obs = transition_batch
         done = done.astype(np.float32)
+        action = action.astype(np.float32)
+        cur_obs = cur_obs.astype(np.float32)
+        rew = rew.astype(np.float32)
+        last_obs = last_obs.astype(np.float32)
         sb3_trans = (last_obs, action, cur_obs, done, rew)
-        print([s.dtype for s in sb3_trans])
-        print(rew)
+        # print([s.dtype for s in sb3_trans])
+        # print(rew)
         data = ReplayBufferSamples(*tuple(map(self.to_torch, sb3_trans)))
         buff_wrap = ReplayBuffWrap(data)
         self.sb3_learner.replay_buffer = buff_wrap

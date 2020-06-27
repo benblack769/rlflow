@@ -1,4 +1,4 @@
-from stable_baselines.common.vec_env.base_vec_env import VecEnv
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 import warnings
 
 class VecEnvWrapper(VecEnv):
