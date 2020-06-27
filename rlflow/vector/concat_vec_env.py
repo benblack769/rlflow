@@ -4,7 +4,7 @@ def transpose(ll):
     return [[ll[i][j] for i in range(len(ll))] for j in range(len(ll[0]))]
 
 class ConcatVecEnv:
-    def __init__(self, vec_env_fns):
+    def __init__(self, vec_env_fns, obs_space=None, act_space=None):
         self.vec_envs = vec_envs = [vec_env_fn() for vec_env_fn in vec_env_fns]
         self.observation_space = vec_envs[0].observation_space
         self.action_space = vec_envs[0].action_space
@@ -28,7 +28,7 @@ class ConcatVecEnv:
 
     def step_wait(self):
         return self.step(self._saved_actions)
-        
+
     def step(self, actions):
         data = []
         idx = 0

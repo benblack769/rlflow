@@ -1,4 +1,3 @@
-from gym.vector import SyncVectorEnv
 import numpy as np
 from rlflow.data_store.data_store import DataStore, DataManager, DataSaver, BatchStore
 from rlflow.selectors.fifo import FifoScheme
@@ -7,6 +6,8 @@ import queue
 from rlflow.adders.logger_adder import LoggerAdder
 from rlflow.wrappers.adder_wrapper import AdderWrapper
 
+def noop(x):
+    return x
 
 def run_loop(
         logger,
@@ -14,10 +15,13 @@ def run_loop(
         policy_delayer,
         actor,
         environment_fn,
+        vec_environment_fn,
         adder_fn,
+        adder_wrapper_fn,
         replay_sampler,
         data_store_size,
-        batch_size
+        batch_size,
+        adder_manip=noop,
         ):
 
 
@@ -42,16 +46,16 @@ def run_loop(
 
     def env_wrap_fn(*args):
         env = environment_fn(*args)
-        adder = adder_fn()
+        adder = adder_manip(adder_fn())
         saver = DataSaver(data_store, empty_entries, new_entries)
         adder.set_generate_callback(saver.save_data)
-        env = AdderWrapper(env, adder)
-        logger_adder = LoggerAdder()
+        env = adder_wrapper_fn(env, adder)
+        logger_adder = adder_manip(LoggerAdder())
         logger_adder.set_generate_callback(env_log_queue.put)
-        env = AdderWrapper(env, logger_adder)
+        env = adder_wrapper_fn(env, logger_adder)
         return env
 
-    vec_env = SyncVectorEnv([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
+    vec_env = vec_environment_fn([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
     obs = vec_env.reset()
 
     for train_step in range(1000000):

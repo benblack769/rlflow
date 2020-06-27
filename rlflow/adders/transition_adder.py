@@ -23,11 +23,10 @@ class TransitionAdder:
 
     def add(self, obs, action, rew, done, info):
         assert self.on_generate is not None, "need to call set_generate_callback before add"
-
+        obs = np.copy(obs)
         if self.last_observation is None:
             self.last_observation = obs
         else:
-            cur_obs = np.zeros_like(obs) if done else obs
-            transition = (cur_obs, action, rew, done, self.last_observation)
+            transition = (obs, action, rew, done, self.last_observation)
             self.on_generate(transition)
-            self.last_observation = obs
+            self.last_observation = None if done else obs

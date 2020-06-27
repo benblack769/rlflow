@@ -20,7 +20,7 @@ class MarkovVectorEnv:
 
     def step_wait(self):
         return self.step(self._saved_actions)
-        
+
     def reset(self):
         return self.concat_obs(self.markov_env.reset())
 
