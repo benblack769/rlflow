@@ -12,10 +12,29 @@ from stable_baselines3.td3 import MlpPolicy
 from stable_baselines3.common.utils import get_schedule_fn
 import supersuit
 from supersuit.gym_wrappers import continuous_actions
-from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, DummyVecEnv, VecTransposeImage
+from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, VecTransposeImage, DummyVecEnv
 
 from rlflow.wrappers.adder_wrapper import AdderWrapper
 from gym.vector import SyncVectorEnv
+from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv
+
+# def vec_env_constr(env_fns, obs_space, act_space):
+#     env_fn = env_fns[0]
+#     num_envs = len(env_fns)
+#     return ConcatVecEnv([make_dummy_fn]*num_envs, obs_space, act_space)
+
+def env_fn():
+    #env = gym.make("CartPole-v0")#
+    env = simple_push_v0.env()
+    env = pad_observations(env)
+    env = pad_action_space(env)
+    markov_env = aec_to_markov(env)
+    venv = MarkovVectorEnv(markov_env)
+    return venv
+
+def adder_wrapper_fn(venv, adder_fn):
+    venv.markov_env = MarkovAdderWrapper(venv.markov_env, adder_fn)
+    return venv
 
 def main():
     n_envs = 8
@@ -50,7 +69,7 @@ def main():
         OccasionalUpdate(10, policy),
         StatelessActor(policy),
         env_fn,
-        SyncVectorEnv,
+        ConcatVecEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
         AdderWrapper,
         UniformSampleScheme(data_store_size),

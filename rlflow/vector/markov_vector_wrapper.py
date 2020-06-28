@@ -29,4 +29,6 @@ class MarkovVectorEnv:
         observations = self.concat_obs(observations)
         rewards = np.array(rewards, dtype=np.float64)
         dones = np.array(dones, dtype=np.bool)
+        if all(dones):
+            observations = self.reset()
         return observations, rewards, dones, infos

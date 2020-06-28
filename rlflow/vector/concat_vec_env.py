@@ -1,4 +1,5 @@
 import numpy as np
+from .single_vec_env import SingleVecEnv
 
 def transpose(ll):
     return [[ll[i][j] for i in range(len(ll))] for j in range(len(ll[0]))]
@@ -6,6 +7,9 @@ def transpose(ll):
 class ConcatVecEnv:
     def __init__(self, vec_env_fns, obs_space=None, act_space=None):
         self.vec_envs = vec_envs = [vec_env_fn() for vec_env_fn in vec_env_fns]
+        for i in range(len(vec_envs)):
+            if not hasattr(vec_envs[i], "num_envs"):
+                vec_envs[i] = SingleVecEnv([lambda: vec_envs[i]])
         self.observation_space = vec_envs[0].observation_space
         self.action_space = vec_envs[0].action_space
         tot_num_envs = sum(env.num_envs for env in vec_envs)
