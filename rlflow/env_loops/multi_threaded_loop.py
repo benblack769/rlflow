@@ -70,11 +70,11 @@ def run_loop(
 
     def env_wrap_fn(*args):
         env = environment_fn(*args)
-        adder = adder_fn()
+        adder = adder_manip(adder_fn())
         saver = DataSaver(data_store, empty_entries, new_entries)
         adder.set_generate_callback(saver.save_data)
         env = adder_wrapper_fn(env, adder)
-        logger_adder = LoggerAdder()
+        logger_adder = adder_manip(LoggerAdder())
         logger_adder.set_generate_callback(env_log_queue.put)
         env = adder_wrapper_fn(env, logger_adder)
         return env
