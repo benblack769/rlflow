@@ -4,20 +4,24 @@ import gym
 from rlflow.policy_delayer.no_update import NoUpdate
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
-from rlflow.adders.transition_adder import TransitionAdder
+from rlflow.adders import TransitionAdder, AgentAdderConcatter
 from rlflow.selectors import UniformSampleScheme
 from rlflow.utils.logger import make_logger
 from stable_baselines3 import TD3
 from stable_baselines3.td3 import MlpPolicy
 from stable_baselines3.common.utils import get_schedule_fn
 import supersuit
-from supersuit.gym_wrappers import continuous_actions
+from supersuit.aec_wrappers import continuous_actions
 from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, VecTransposeImage, DummyVecEnv
 
 from rlflow.wrappers.adder_wrapper import AdderWrapper
+from rlflow.wrappers.markov_adder_wrapper import MarkovAdderWrapper
 from gym.vector import SyncVectorEnv
-from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv
+from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv, SpaceWrap
 
+from pettingzoo.mpe import simple_push_v0
+from supersuit.aec_wrappers import pad_observations, pad_action_space
+import copy
 # def vec_env_constr(env_fns, obs_space, act_space):
 #     env_fn = env_fns[0]
 #     num_envs = len(env_fns)
@@ -28,6 +32,7 @@ def env_fn():
     env = simple_push_v0.env()
     env = pad_observations(env)
     env = pad_action_space(env)
+    env = continuous_actions(env)
     markov_env = aec_to_markov(env)
     venv = MarkovVectorEnv(markov_env)
     return venv
@@ -39,23 +44,24 @@ def adder_wrapper_fn(venv, adder_fn):
 def main():
     n_envs = 8
     env_id = "CartPole-v0"
-    def env_fn():
-        return continuous_actions(gym.make(env_id))
+    # def env_fn():
+    #     return continuous_actions(gym.make(env_id))
     env = env_fn()
     #print(env.observation_space)
     #obs_size, = env.observation_space.shape
     #act_size = env.action_space.n
 
-    env = DummyVecEnv([env_fn])
-    eval_env = DummyVecEnv([env_fn])
+    sb3_env = SpaceWrap(env)
 
+    # print(sb3_env.action_space)
+    # exit(0)
     n_timesteps = 1000
     save_path = "log"
     eval_freq = 50
 
     tensorboard_log = ""
 
-    model = TD3(env=env, tensorboard_log=tensorboard_log, policy=MlpPolicy)
+    model = TD3(env=sb3_env, tensorboard_log=tensorboard_log, policy=MlpPolicy)
     learner = SB3LearnWrapper(model)
     device = "cpu"
     learn_rate = lambda x: 0.01
@@ -71,9 +77,10 @@ def main():
         env_fn,
         ConcatVecEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
-        AdderWrapper,
+        adder_wrapper_fn,
         UniformSampleScheme(data_store_size),
         data_store_size,
-        batch_size
+        batch_size,
+        lambda adder: AgentAdderConcatter(env.markov_env.agents, lambda:copy.deepcopy(adder))
     )
 main()

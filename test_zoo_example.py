@@ -8,13 +8,15 @@ from rlflow.wrappers.markov_adder_wrapper import MarkovAdderWrapper
 from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv
-from pettingzoo.mpe import simple_push_v0
+from pettingzoo.mpe import simple_world_comm_v0
 from supersuit.aec_wrappers import pad_observations, pad_action_space
 import copy
 
 def env_fn():
     #env = gym.make("CartPole-v0")#
-    env = simple_push_v0.env()
+    env = simple_world_comm_v0.env()
+    # print(env.action_spaces.values())
+    # exit(0)
     env = pad_observations(env)
     env = pad_action_space(env)
     markov_env = aec_to_markov(env)
