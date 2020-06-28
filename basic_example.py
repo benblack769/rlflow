@@ -23,7 +23,6 @@ class FCPolicy(StatelessPolicy):
             epsilon = 0.1
             pick_rand = np.random.random(size=len(observations)) < epsilon
             actions = np.where(pick_rand, random, greedy)
-            print(actions)
         return actions
 
     def get_params(self):

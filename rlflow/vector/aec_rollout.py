@@ -24,7 +24,6 @@ class RolloutBuilder:
         infos = []
         for x in range(n_steps):
             actions,states = policy.rollout_step(self.prev_observes, self.prev_infos, self.states)
-            print(actions)
             obs, rew, done, info = self.vec_env.step(actions)
 
             if self.obs_buffer is None or len(self.obs_buffer) != n_steps:

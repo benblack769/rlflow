@@ -5,7 +5,6 @@ from rlflow.selectors.fifo import FifoScheme
 import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
-from rlflow.wrappers.adder_wrapper import AdderWrapper
 
 def run_batch_generator(batch_samples, data_store, batch_generator, term_event):
     while not term_event.is_set():
@@ -34,16 +33,22 @@ def run_actor_loop(actor_fn, n_envs, policy_delayer, vec_env):
         if act_step % 1000 == 0:
             print("acted")
 
+def noop(x):
+    return x
+
 def run_loop(
         logger,
         learner_fn,
         policy_delayer,
         actor_fn,
         environment_fn,
+        vec_environment_fn,
         adder_fn,
+        adder_wrapper_fn,
         replay_sampler,
         data_store_size,
-        batch_size
+        batch_size,
+        adder_manip=noop,
         ):
 
     terminate_event = mp.Event()
@@ -68,13 +73,13 @@ def run_loop(
         adder = adder_fn()
         saver = DataSaver(data_store, empty_entries, new_entries)
         adder.set_generate_callback(saver.save_data)
-        env = AdderWrapper(env, adder)
+        env = adder_wrapper_fn(env, adder)
         logger_adder = LoggerAdder()
         logger_adder.set_generate_callback(env_log_queue.put)
-        env = AdderWrapper(env, logger_adder)
+        env = adder_wrapper_fn(env, logger_adder)
         return env
 
-    vec_env = SyncVectorEnv([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
+    vec_env = vec_environment_fn([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
 
     mp.Process(target=run_batch_generator,args=(batch_samples, data_store, batch_generator, terminate_event)).start()
     mp.Process(target=run_data_manager,args=(data_manager,)).start()
