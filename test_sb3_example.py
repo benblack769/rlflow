@@ -5,7 +5,7 @@ from rlflow.policy_delayer.no_update import NoUpdate
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
-from rlflow.selectors import DensitySampleScheme
+from rlflow.selectors import UniformSampleScheme
 from rlflow.utils.logger import make_logger
 from stable_baselines3 import TD3
 from stable_baselines3.td3 import MlpPolicy
@@ -13,6 +13,9 @@ from stable_baselines3.common.utils import get_schedule_fn
 import supersuit
 from supersuit.gym_wrappers import continuous_actions
 from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, DummyVecEnv, VecTransposeImage
+
+from rlflow.wrappers.adder_wrapper import AdderWrapper
+from gym.vector import SyncVectorEnv
 
 def main():
     n_envs = 8
@@ -47,8 +50,10 @@ def main():
         OccasionalUpdate(10, policy),
         StatelessActor(policy),
         env_fn,
+        SyncVectorEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
-        DensitySampleScheme(data_store_size),
+        AdderWrapper,
+        UniformSampleScheme(data_store_size),
         data_store_size,
         batch_size
     )
