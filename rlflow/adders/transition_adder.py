@@ -12,7 +12,7 @@ class TransitionAdder:
         return (
             self.observation_space,
             self.action_space,
-            np.array(0,dtype=np.float64),
+            np.array(0,dtype=np.float32),
             np.array(0,dtype=np.bool),
             self.observation_space
         )

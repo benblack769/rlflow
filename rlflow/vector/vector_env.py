@@ -27,7 +27,7 @@ class VectorAECWrapper:
         return cur_selection
 
     def _collect_dicts(self):
-        self.rewards = {agent: np.array([env.rewards[agent] for env in self.envs],dtype=np.float64) for agent in self.agents}
+        self.rewards = {agent: np.array([env.rewards[agent] for env in self.envs],dtype=np.float32) for agent in self.agents}
         self.dones = {agent: np.array([env.dones[agent] for env in self.envs],dtype=np.bool) for agent in self.agents}
         env_dones = np.array([all(env.dones.values()) for env in self.envs],dtype=np.bool)
         self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}

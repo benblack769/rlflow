@@ -13,9 +13,9 @@ class OnPolicyAdder:
         return (
             self.observation_space,
             self.action_space,
-            np.array(0,dtype=np.float64), # values
-            np.array(0,dtype=np.float64), # advantages
-            np.array(0,dtype=np.float64), # returns
+            np.array(0,dtype=np.float32), # values
+            np.array(0,dtype=np.float32), # advantages
+            np.array(0,dtype=np.float32), # returns
             self.action_space,   # log_probs
         )
 

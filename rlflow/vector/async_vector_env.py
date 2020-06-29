@@ -48,7 +48,7 @@ class AgentSharedData:
         obs_array,act_array,rew_array,done_array = data
         self.obs = SharedData(obs_array, num_envs, obs_space.shape, obs_space.dtype)
         self.act = SharedData(act_array, num_envs, act_space.shape, act_space.dtype)
-        self.rewards = SharedData(rew_array, num_envs, (), np.float64)
+        self.rewards = SharedData(rew_array, num_envs, (), np.float32)
         self.dones = SharedData(done_array, num_envs, (), np.bool)
 
 class EnvSharedData:
@@ -114,7 +114,7 @@ def init_parallel_env():
 
 def write_out_data(rewards, dones, num_envs, start_index, shared_data):
     for agent in shared_data:
-        rews = np.asarray(rewards[agent],dtype=np.float64)
+        rews = np.asarray(rewards[agent],dtype=np.float32)
         dns = np.asarray(dones[agent],dtype=np.bool)
         cur_data = shared_data[agent]
         cur_data.rewards.nparr[start_index:start_index+num_envs] = rews

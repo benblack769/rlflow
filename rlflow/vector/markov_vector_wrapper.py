@@ -27,7 +27,7 @@ class MarkovVectorEnv:
     def step(self, actions):
         observations, rewards, dones, infos = self.markov_env.step(actions)
         observations = self.concat_obs(observations)
-        rewards = np.array(rewards, dtype=np.float64)
+        rewards = np.array(rewards, dtype=np.float32)
         dones = np.array(dones, dtype=np.bool)
         if all(dones):
             observations = self.reset()
