@@ -21,19 +21,20 @@ class FeatureExtractor(torch.nn.Module):
             else:
                 lim_dim = max(obs_shape[0],obs_shape[1])
                 num_layers = int(math.log2(lim_dim) - math.log2(4))
-                all_layer_sizes = [64,96,128,192,256]
+                all_layer_sizes = [32,48,64,96,128,192]
                 layer_sizes = [obs_shape[-1]]+all_layer_sizes[len(all_layer_sizes)-num_layers:]
                 layers = []
                 cur_shape = obs_shape
                 for i in range(num_layers):
-                    layers.append(torch.nn.Conv2d(layer_sizes[i], layer_sizes[i]+1, 3))
+                    layers.append(torch.nn.Conv2d(layer_sizes[i], layer_sizes[i+1], 3, padding=1))
                     layers.append(torch.nn.ReLU())
-                    layers.append(torch.nn.Conv2d(layer_sizes[i], layer_sizes[i]+1, 3))
+                    layers.append(torch.nn.Conv2d(layer_sizes[i+1], layer_sizes[i+1], 3, padding=1))
                     layers.append(torch.nn.ReLU())
-                    layers.append(torch.nn.MaxPool2d(size=2,stride=2))
-                    cur_shape = ((1+cur_shape[0])//2,(1+cur_shape[1])//2,cur_shape[2])
+                    layers.append(torch.nn.MaxPool2d(kernel_size=2,stride=2))
+                    cur_shape = ((cur_shape[0])//2,(cur_shape[1])//2,layer_sizes[i+1])
                 layers.append(torch.nn.Flatten())
                 res_size = int(np.prod(cur_shape))
+
                 layers.append(torch.nn.Linear(res_size, final_dim))
                 layers.append(torch.nn.ReLU())
                 layers.append(torch.nn.Linear(final_dim, final_dim))
@@ -49,14 +50,21 @@ class FeatureExtractor(torch.nn.Module):
                 torch.nn.Linear(final_dim, final_dim)
             )
         self.net = net.to(device)
+        self.obs_space = obs_space
+        self.obs_target_shape = obs_shape
 
     def forward(self, input):
-        return self.net(input)
+        input = input.float()#(torch.FloatTensor)
+        if len(input.shape) == 4:
+            input = torch.transpose(input, 1, 3)
+        features = self.net(input)
+
+        return features
 
 class Actor(torch.nn.Module):
     def __init__(self, num_features, action_space, device):
         super().__init__()
-        act_size = np.prod(action_space.shape)
+        act_size = int(np.prod(action_space.shape))
         self.net = torch.nn.Sequential(
             torch.nn.Linear(num_features, act_size*2),
             torch.nn.ReLU(),
@@ -71,9 +79,10 @@ class Critic(torch.nn.Module):
     def __init__(self, num_features, action_space, device):
         super().__init__()
         act_feature_size = max(64, num_features//4)
+        act_size = int(np.prod(action_space.shape))
         self.act_extractor = torch.nn.Sequential(
             torch.nn.Flatten(),
-            torch.nn.Linear(np.prod(action_space.shape), act_feature_size),
+            torch.nn.Linear(act_size, act_feature_size),
             torch.nn.ReLU(),
             torch.nn.Linear(act_feature_size, num_features),
         ).to(device)
@@ -190,7 +199,7 @@ class DDPGLearner:
         critic_eval1 = self.policy.critic1.q_val(action, features)
         critic_eval2 = self.policy.critic2.q_val(action, features)
         critic_loss = F.mse_loss(critic_eval1, total_rew) + F.mse_loss(critic_eval2, total_rew)
-        #print(critic_loss.detach().cpu().numpy(), actor_loss.detach().cpu().numpy())
+
         critic_loss.backward()
         self.optimizer.step()
 

@@ -8,20 +8,20 @@ from rlflow.wrappers.adder_wrapper import AdderWrapper
 from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 from gym.vector import SyncVectorEnv
-from supersuit.gym_wrappers import normalize_obs
+from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale
 
 def env_fn():
-    return (gym.make("BipedalWalker-v3"))
+    return down_scale(continuous_actions(gym.make("SpaceInvaders-v4")), 2, 3)
 
 def main():
     env = env_fn()
-    print(env.observation_space)
+    
     device = "cuda"
     noise_model = ClippedGuassianNoiseModel()
     action_normalizer = lambda: BoxActionNormalizer(env.action_space, device)
     policy_fn = lambda: ActCriticPolicy(env.observation_space, env.action_space, device, noise_model)
     data_store_size = 12800
-    batch_size = 16
+    batch_size = 128
     logger = make_logger("log")
     run_loop(
         logger,
