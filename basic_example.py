@@ -64,4 +64,5 @@ class DQNLearner:
         q_loss.backward()
         self.optimizer.step()
         final_loss = q_loss.cpu().detach().numpy()
-        self.logger.record("loss", final_loss)
+        self.logger.record_mean("loss", final_loss)
+        self.logger.record_sum("learner_steps", 1)

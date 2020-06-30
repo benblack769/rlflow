@@ -21,7 +21,7 @@ class FeatureExtractor(torch.nn.Module):
             else:
                 lim_dim = max(obs_shape[0],obs_shape[1])
                 num_layers = int(math.log2(lim_dim) - math.log2(4))
-                all_layer_sizes = [32,48,64,96,128,192]
+                all_layer_sizes = [24,32,48,64,96]
                 layer_sizes = [obs_shape[-1]]+all_layer_sizes[len(all_layer_sizes)-num_layers:]
                 layers = []
                 cur_shape = obs_shape
@@ -29,7 +29,7 @@ class FeatureExtractor(torch.nn.Module):
                     layers.append(torch.nn.Conv2d(layer_sizes[i], layer_sizes[i+1], 3, padding=1))
                     layers.append(torch.nn.ReLU())
                     layers.append(torch.nn.Conv2d(layer_sizes[i+1], layer_sizes[i+1], 3, padding=1))
-                    layers.append(torch.nn.ReLU())
+                    #layers.append(torch.nn.ReLU())
                     layers.append(torch.nn.MaxPool2d(kernel_size=2,stride=2))
                     cur_shape = ((cur_shape[0])//2,(cur_shape[1])//2,layer_sizes[i+1])
                 layers.append(torch.nn.Flatten())
@@ -161,6 +161,7 @@ class DDPGLearner:
 
     def learn_step(self, transition_batch):
         Otm1, action, rew, done, Ot = transition_batch
+        batch_size = len(Ot)
         Otm1 = torch.tensor(Otm1, device=self.device)
         action = torch.tensor(action, device=self.device)
         rew = torch.tensor(rew, device=self.device)
@@ -205,5 +206,6 @@ class DDPGLearner:
 
         copy_params(self.delayed_policy,self.policy,self.target_update_val)
 
-        self.logger.record("actor_loss", actor_loss.detach().cpu().numpy())
-        self.logger.record("critic_loss", critic_loss.detach().cpu().numpy())
+        self.logger.record_mean("actor_loss", actor_loss.detach().cpu().numpy())
+        self.logger.record_mean("critic_loss", critic_loss.detach().cpu().numpy())
+        self.logger.record_sum("learner_steps", batch_size)

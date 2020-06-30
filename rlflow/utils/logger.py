@@ -53,6 +53,18 @@ class Logger(object):
         self.name_to_value[key] = value
         self.name_to_excluded[key] = exclude
 
+    def record_sum(self, key: str, value: Any,
+               exclude: Optional[Union[str, Tuple[str, ...]]] = None) -> None:
+        """
+        The same as record(), but if called many times, values summed.
+
+        :param key: (Any) save to log this key
+        :param value: (Number) save to log this value
+        :param exclude: (str or tuple) outputs to be excluded
+        """
+        self.name_to_value[key] += value
+        self.name_to_excluded[key] = exclude
+
     def record_mean(self, key: str, value: Any,
                     exclude: Optional[Union[str, Tuple[str, ...]]] = None) -> None:
         """
@@ -69,6 +81,17 @@ class Logger(object):
         self.name_to_value[key] = old_val * count / (count + 1) + value / (count + 1)
         self.name_to_count[key] = count + 1
         self.name_to_excluded[key] = exclude
+
+    def record_type(self, type: str, key: str, value: Any,
+               exclude: Optional[Union[str, Tuple[str, ...]]] = None) -> None:
+        if type == "mean":
+            self.record_mean(key, value, exclude)
+        elif type == "sum":
+            self.record_sum(key, value, exclude)
+        elif type == "last":
+            self.record(key, value, exclude)
+        else:
+            assert False, "bad type, must be one of `mean`, `sum`, `last`"
 
     def dump(self, step: int = 0) -> None:
         """

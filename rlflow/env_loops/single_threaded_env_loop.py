@@ -5,15 +5,16 @@ import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
 from rlflow.wrappers.adder_wrapper import AdderWrapper
+import time
 
 def noop(x):
     return x
 
 def run_loop(
         logger,
-        learner,
+        learner_fn,
         policy_delayer,
-        actor,
+        actor_fn,
         environment_fn,
         vec_environment_fn,
         adder_fn,
@@ -22,6 +23,7 @@ def run_loop(
         data_store_size,
         batch_size,
         adder_manip=noop,
+        log_frequency=100,
         ):
 
 
@@ -58,27 +60,32 @@ def run_loop(
     vec_env = vec_environment_fn([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
     obs = vec_env.reset()
 
+    learner = learner_fn()
+    actor = actor_fn()
+    prev_time = time.time()/log_frequency
+
     for train_step in range(1000000):
         policy_delayer.learn_step(learner.policy)
         policy_delayer.actor_step(actor.policy)
 
         data_manager.update()
+        for i in range(max(1,batch_size//n_envs)):
+            actions = actor.step(obs, dones, infos)
 
-        actions = actor.step(obs, dones, infos)
-
-        obs, rews, dones, infos = vec_env.step(actions)
+            obs, rews, dones, infos = vec_env.step(actions)
 
         try:
             batch_idxs = batch_samples.get_nowait()
         except queue.Empty:
             continue
+
         batch_generator.store_batch(data_store, batch_idxs)
         learn_batch = batch_generator.get_batch()
         learner.learn_step(learn_batch)
-        batch_generator.batch_copied()
 
         while not env_log_queue.empty():
-            logger.record(*env_log_queue.get_nowait())
+            logger.record_type(*env_log_queue.get_nowait())
 
-        if train_step % 1000 == 0:
+        if time.time()/log_frequency > prev_time:
             logger.dump()
+            prev_time += 1

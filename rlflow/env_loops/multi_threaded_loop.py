@@ -4,22 +4,29 @@ from rlflow.data_store.data_store import DataStore, DataManager, DataSaver, Batc
 from rlflow.selectors.fifo import FifoScheme
 import multiprocessing as mp
 import queue
+import time
 from rlflow.adders.logger_adder import LoggerAdder
 
-def run_batch_generator(batch_samples, data_store, batch_generator, term_event):
+def run_batch_generator(batch_samples, data_store, batch_generator, term_event, logger):
     while not term_event.is_set():
         try:
             batch_idxs = batch_samples.get_nowait()
         except queue.Empty:
             continue
         batch_generator.store_batch(data_store, batch_idxs)
+        logger.put(("sum", "batch_iters", 1))
 
-def run_data_manager(data_manager):
+def run_data_manager(data_manager, logger):
     while True:
+        #logger.put(("sum", "data_iters", 1))
         data_manager.update()
 
-def run_actor_loop(actor_fn, n_envs, policy_delayer, vec_env):
+def run_actor_loop(actor_fn, n_envs, policy_delayer, vec_env_fn, env_fn):
     actor = actor_fn()
+
+    example_env = env_fn()
+    vec_env = vec_env_fn([env_fn]*n_envs, example_env.observation_space, example_env.action_space)
+
     dones = np.zeros(n_envs,dtype=np.bool)
     infos = [{} for _ in range(n_envs)]
     obs = vec_env.reset()
@@ -30,8 +37,7 @@ def run_actor_loop(actor_fn, n_envs, policy_delayer, vec_env):
         actions = actor.step(obs, dones, infos)
 
         obs, rews, dones, infos = vec_env.step(actions)
-        if act_step % 1000 == 0:
-            print("acted")
+
 
 def noop(x):
     return x
@@ -49,13 +55,13 @@ def run_loop(
         data_store_size,
         batch_size,
         adder_manip=noop,
+        log_frequency=100,
         ):
 
     terminate_event = mp.Event()
 
-    example_env = environment_fn()
     example_adder = adder_fn()
-    n_envs = 64
+    n_envs = 8
     transition_example = example_adder.get_example_output()
     data_store = DataStore(transition_example, data_store_size)
     removal_scheme = FifoScheme()
@@ -79,13 +85,12 @@ def run_loop(
         env = adder_wrapper_fn(env, logger_adder)
         return env
 
-    vec_env = vec_environment_fn([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
-
-    mp.Process(target=run_batch_generator,args=(batch_samples, data_store, batch_generator, terminate_event)).start()
-    mp.Process(target=run_data_manager,args=(data_manager,)).start()
-    mp.Process(target=run_actor_loop,args=(actor_fn, n_envs, policy_delayer, vec_env)).start()
+    mp.Process(target=run_batch_generator,args=(batch_samples, data_store, batch_generator, terminate_event, env_log_queue)).start()
+    mp.Process(target=run_data_manager,args=(data_manager,env_log_queue)).start()
+    mp.Process(target=run_actor_loop,args=(actor_fn, n_envs, policy_delayer, vec_environment_fn, env_wrap_fn)).start()
 
     learner = learner_fn()
+    prev_time = time.time()/log_frequency
 
     for train_step in range(1000000):
         policy_delayer.learn_step(learner.policy)
@@ -94,10 +99,10 @@ def run_loop(
         if learn_batch is None:
             continue
         learner.learn_step(learn_batch)
-        batch_generator.batch_copied()
 
         while not env_log_queue.empty():
-            logger.record(*env_log_queue.get_nowait())
+            logger.record_type(*env_log_queue.get_nowait())
 
-        if train_step % 1000 == 0:
+        if time.time()/log_frequency > prev_time:
             logger.dump()
+            prev_time += 1

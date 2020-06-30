@@ -91,11 +91,13 @@ class DataSaver:
 class BatchStore:
     def __init__(self, batch_size, transition_example):
         self.batch_size = batch_size
-        self.data = []
+        self.shared_data = []
+        self.copied_data = []
         for arr in transition_example:
             assert np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool), "dtype of transition must be a number or bool, something wrong in adder or environment"
             data_entry = SharedArray((batch_size,)+arr.shape,dtype=arr.dtype)
-            self.data.append(data_entry)
+            self.shared_data.append(data_entry)
+            self.copied_data.append(np.empty((batch_size,)+arr.shape,dtype=arr.dtype))
 
         self.is_full = mp.Event()
         self.is_empty = mp.Event()
@@ -103,7 +105,7 @@ class BatchStore:
 
     def store_batch(self, data_store, batch_idxs):
         self.is_empty.wait()
-        for source, dest in zip(data_store.data, self.data):
+        for source, dest in zip(data_store.data, self.shared_data):
             np.take(source.np_arr,batch_idxs,axis=0,out=dest.np_arr)
 
         self.is_full.set()
@@ -113,10 +115,9 @@ class BatchStore:
         if not self.is_full.is_set():
             return None
 
-        result = [entry.np_arr for entry in self.data]
+        for dest,src in zip(self.copied_data, self.shared_data):
+            dest[:] = src.np_arr
 
         self.is_full.clear()
-        return result
-
-    def batch_copied(self):
         self.is_empty.set()
+        return self.copied_data
