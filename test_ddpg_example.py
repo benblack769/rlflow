@@ -1,6 +1,6 @@
 from ddpg_example import ActCriticPolicy, DDPGLearner, ClippedGuassianNoiseModel, BoxActionNormalizer
-from rlflow.env_loops.single_threaded_env_loop import run_loop
-#from rlflow.env_loops.multi_threaded_loop import run_loop
+#from rlflow.env_loops.single_threaded_env_loop import run_loop
+from rlflow.env_loops.multi_threaded_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -9,10 +9,11 @@ from rlflow.wrappers.adder_wrapper import AdderWrapper
 from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 from gym.vector import SyncVectorEnv, AsyncVectorEnv
-from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale
+from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale, dtype
+import numpy as np
 
 def env_fn():
-    env = down_scale(continuous_actions(gym.make("SpaceInvaders-v4")), 2, 3)
+    env = dtype(continuous_actions(gym.make("SpaceInvaders-v4")), np.float32)
     #env._max_episode_steps = 50
     return env
 
@@ -30,7 +31,7 @@ def main():
     action_normalizer = lambda: BoxActionNormalizer(env.action_space, device)
     policy_fn_dev = lambda device: ActCriticPolicy(env.observation_space, env.action_space, device, noise_model)
     policy_fn = lambda:policy_fn_dev(device)
-    data_store_size = 12800
+    data_store_size = 58000
     batch_size = 128
     logger = make_logger("log")
     run_loop(
@@ -39,7 +40,7 @@ def main():
         OccasionalUpdate(10, policy_fn_dev("cpu")),
         lambda: StatelessActor(policy_fn()),
         env_fn,
-        AsyncVectorEnv,
+        SyncVectorEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
         AdderWrapper,
         DensitySampleScheme(data_store_size),
