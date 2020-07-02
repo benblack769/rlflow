@@ -1,123 +1,59 @@
 import multiprocessing as mp
 import queue
-from rlflow.utils.shared_array import SharedArray
+from rlflow.utils.shared_mem_pipe import SharedMemPipe, expand_example
 import numpy as np
 
-class DataStore:
-    def __init__(self, transition_example, max_size):
-        '''
-        Args:
-
-        sample_scheme: description of the actions, observations, etc.
-        removal_scheme: the online (optimized) policy.
-        max_size: the online critic.
-        '''
-        self.max_size = max_size
-        self.add_idx = 0
+class DataManager:
+    def __init__(self, new_entries_pipes, transition_example, removal_scheme, sample_scheme, max_entries):
+        self.removal_scheme = removal_scheme
+        self.sample_scheme = sample_scheme
+        self.max_entries = max_entries
+        self.transition_example = transition_example
+        self.new_entries_pipes = new_entries_pipes
+        self.init_add_idx = 0
 
         self.data = []
         for arr in transition_example:
             assert np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool), "dtype of transition must be a number or bool, something wrong in adder or environment"
-            data_entry = SharedArray((self.max_size,)+arr.shape,dtype=arr.dtype)
+            data_entry = np.empty((self.max_entries,)+arr.shape,dtype=arr.dtype)
             self.data.append(data_entry)
 
+    def receive_new_entries(self):
+        for new_entry_pipes in self.new_entries_pipes:
+            add_data = new_entry_pipes.get()
 
-    def add_item(self, id, transition):
-        for data,trans in zip(self.data,transition):
-            data.np_arr[id] = trans
+            if add_data is not None:
+                self.add_data(add_data)
 
+    def add_data(self, add_data):
+        if self.init_add_idx < self.max_entries:
+            new_id = self.init_add_idx
+            self.init_add_idx += 1
+        else:
+            remove_vals = self.removal_scheme.sample(1)
+            assert remove_vals is not None, "tried to remove item and could not, something is wrong with removal scheme or replay buffer size is too small"
+            new_id = remove_vals[0]
+            self.removal_scheme.remove(new_id)
+            self.sample_scheme.remove(new_id)
 
-class DataManager:
-    def __init__(self, removal_scheme, sample_scheme, max_entries, empty_entries, new_entries, batch_samples, batch_size):
-        self.removal_scheme = removal_scheme
-        self.sample_scheme = sample_scheme
-        self.empty_entries = empty_entries
-        self.batch_samples = batch_samples
-        self.new_entries = new_entries
-        self.batch_size = batch_size
-        self.max_entries = max_entries
-        self.init_add_idx = 0
+        self.sample_scheme.add(new_id)
+        self.removal_scheme.add(new_id)
+        self._add_item(new_id, add_data)
 
-    def update(self):
-        sample_result = self.sample_scheme.sample(self.batch_size)
-        if sample_result is not None:
-            self.batch_samples.put(sample_result,timeout=5.0)
-
-        while not self.empty_entries.full():
-            if self.init_add_idx < self.max_entries:
-                remove_id = self.init_add_idx
-                self.init_add_idx += 1
-            else:
-                remove_vals = self.removal_scheme.sample(1)
-                if remove_vals is None:
-                    break
-                remove_id = remove_vals[0]
-                self.removal_scheme.remove(remove_id)
-                self.sample_scheme.remove(remove_id)
-            # should never except because of the size calculation
-            self.empty_entries.put_nowait(remove_id)
-
-        try:
-            while True:
-                add_id = self.new_entries.get_nowait()
-                self.sample_scheme.add(add_id)
-                self.removal_scheme.add(add_id)
-        except queue.Empty:
-            pass
-
-
-
-class DataSaver:
-    def __init__(self, data_store, empty_entries, new_entries):
-        self.data_store = data_store
-        self.empty_entries = empty_entries
-        self.new_entries = new_entries
-
-    def save_data(self, transition):
-        if self.new_entries.full():
-            return
-        try:
-            id = self.empty_entries.get_nowait()
-        except queue.Empty:
-            return
-
-        self.data_store.add_item(id, transition)
-
-        try:
-            self.new_entries.put_nowait(id)
-        except queue.Full:
-            return
-
-class BatchStore:
-    def __init__(self, batch_size, transition_example):
-        self.batch_size = batch_size
-        self.shared_data = []
-        self.copied_data = []
-        for arr in transition_example:
-            assert np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool), "dtype of transition must be a number or bool, something wrong in adder or environment"
-            data_entry = SharedArray((batch_size,)+arr.shape,dtype=arr.dtype)
-            self.shared_data.append(data_entry)
-            self.copied_data.append(np.empty((batch_size,)+arr.shape,dtype=arr.dtype))
-
-        self.is_full = mp.Event()
-        self.is_empty = mp.Event()
-        self.is_empty.set()
-
-    def store_batch(self, data_store, batch_idxs):
-        self.is_empty.wait()
-        for source, dest in zip(data_store.data, self.shared_data):
-            np.take(source.np_arr,batch_idxs,axis=0,out=dest.np_arr)
-
-        self.is_full.set()
-        self.is_empty.clear()
-
-    def get_batch(self):
-        if not self.is_full.is_set():
+    def sample_data(self, batch_size):
+        sample_idxs = self.sample_scheme.sample(batch_size)
+        if sample_idxs is None:
             return None
+        else:
+            return self._get_data(sample_idxs)
 
-        for dest,src in zip(self.copied_data, self.shared_data):
-            dest[:] = src.np_arr
+    def _add_item(self, id, transition):
+        for data,trans in zip(self.data,transition):
+            data[id] = trans
 
-        self.is_full.clear()
-        self.is_empty.set()
-        return self.copied_data
+    def _get_data(self, idxs):
+        idxs = np.asarray(idxs,dtype=np.int64)
+        result = []
+        for source in self.data:
+            result.append(source[idxs])
+        return result

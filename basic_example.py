@@ -43,6 +43,7 @@ class DQNLearner:
     def learn_step(self, transition_batch):
         model = self.policy.model
         Otm1, action, rew, done, Ot = transition_batch
+        batch_size = len(Ot)
         Otm1 = torch.tensor(Otm1, device=self.device)
         action = torch.tensor(action, device=self.device)
         rew = torch.tensor(rew, device=self.device)
@@ -65,4 +66,4 @@ class DQNLearner:
         self.optimizer.step()
         final_loss = q_loss.cpu().detach().numpy()
         self.logger.record_mean("loss", final_loss)
-        self.logger.record_sum("learner_steps", 1)
+        self.logger.record_sum("learner_steps", batch_size)

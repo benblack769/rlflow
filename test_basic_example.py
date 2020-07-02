@@ -17,22 +17,25 @@ def main():
     print(env.observation_space)
     obs_size, = env.observation_space.shape
     act_size = env.action_space.n
-    device = "cpu"
+    device = "cuda"
     policy = FCPolicy(obs_size, act_size, 64, device)
     data_store_size = 12800
-    batch_size = 16
+    batch_size = 64
+    n_envs = 32
     logger = make_logger("log")
     run_loop(
         logger,
-        DQNLearner(policy, 0.001, 0.99, logger, device),
+        lambda: DQNLearner(policy, 0.001, 0.99, logger, device),
         OccasionalUpdate(10, policy),
-        StatelessActor(policy),
+        lambda: StatelessActor(policy),
         env_fn,
         SyncVectorEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
         AdderWrapper,
         DensitySampleScheme(data_store_size),
         data_store_size,
-        batch_size
+        batch_size,
+        n_envs,
+        log_frequency=5
     )
 main()

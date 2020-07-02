@@ -1,10 +1,11 @@
 import numpy as np
-from rlflow.data_store.data_store import DataStore, DataManager, DataSaver, BatchStore
+from rlflow.data_store.data_store import DataManager
 from rlflow.selectors.fifo import FifoScheme
 import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
 from rlflow.wrappers.adder_wrapper import AdderWrapper
+from rlflow.utils.shared_mem_pipe import SharedMemPipe, expand_example
 import time
 
 def noop(x):
@@ -22,69 +23,69 @@ def run_loop(
         replay_sampler,
         data_store_size,
         batch_size,
-        adder_manip=noop,
+        n_envs=1,
         log_frequency=100,
         ):
 
 
     example_env = environment_fn()
+
+    vec_env = vec_environment_fn([environment_fn]*n_envs, example_env.observation_space, example_env.action_space)
+
     example_adder = adder_fn()
-    n_envs = 8
     dones = np.zeros(n_envs,dtype=np.bool)
     infos = [{} for _ in range(n_envs)]
 
     transition_example = example_adder.get_example_output()
-    data_store = DataStore(transition_example, data_store_size)
     removal_scheme = FifoScheme()
-    empty_entries = mp.Queue(n_envs*2)
-    new_entries = mp.Queue(n_envs*2)
-    batch_samples = mp.Queue(3)
-    data_manager = DataManager(removal_scheme, replay_sampler, data_store_size, empty_entries, new_entries, batch_samples, batch_size)
+    sample_scheme = replay_sampler
+    new_entry_pipes = [SharedMemPipe(transition_example) for _ in range(n_envs)]
 
-    env_log_queue = mp.Queue()
+    data_manager = DataManager(new_entry_pipes, transition_example, removal_scheme, sample_scheme, data_store_size)
 
-    batch_generator = BatchStore(batch_size, transition_example)
+    adders = [adder_fn() for _ in range(n_envs)]
+    log_adders = [LoggerAdder() for _ in range(n_envs)]
+    for adder,entry_pipe in zip(adders, new_entry_pipes):
+        adder.set_generate_callback(entry_pipe.store)
 
+    for log_adder in log_adders:
+        log_adder.set_generate_callback(lambda args: logger.record_type(*args))
 
-    def env_wrap_fn(*args):
-        env = environment_fn(*args)
-        adder = adder_manip(adder_fn())
-        saver = DataSaver(data_store, empty_entries, new_entries)
-        adder.set_generate_callback(saver.save_data)
-        env = adder_wrapper_fn(env, adder)
-        logger_adder = adder_manip(LoggerAdder())
-        logger_adder.set_generate_callback(env_log_queue.put)
-        env = adder_wrapper_fn(env, logger_adder)
-        return env
-
-    vec_env = vec_environment_fn([env_wrap_fn]*n_envs, example_env.observation_space, example_env.action_space)
-    obs = vec_env.reset()
+    # def env_wrap_fn(*args):
+    #     env = environment_fn(*args)
+    #     adder = adder_manip(adder_fn())
+    #     saver = DataSaver(data_store, empty_entries, new_entries)
+    #     adder.set_generate_callback(saver.save_data)
+    #     env = adder_wrapper_fn(env, adder)
+    #     logger_adder = adder_manip(LoggerAdder())
+    #     logger_adder.set_generate_callback(env_log_queue.put)
+    #     env = adder_wrapper_fn(env, logger_adder)
+    #     return env
 
     learner = learner_fn()
     actor = actor_fn()
     prev_time = time.time()/log_frequency
 
+    obss = vec_env.reset()
+
     for train_step in range(1000000):
         policy_delayer.learn_step(learner.policy)
         policy_delayer.actor_step(actor.policy)
 
-        data_manager.update()
         for i in range(max(1,batch_size//n_envs)):
-            actions = actor.step(obs, dones, infos)
+            actions = actor.step(obss, dones, infos)
 
-            obs, rews, dones, infos = vec_env.step(actions)
+            obss, rews, dones, infos = vec_env.step(actions)
+            for i in range(len(obss)):
+                obs,act,rew,done,info = obss[i], actions[i], rews[i], dones[i], infos[i]
+                adders[i].add(obs,act,rew,done,info)
+                log_adders[i].add(obs,act,rew,done,info)
 
-        try:
-            batch_idxs = batch_samples.get_nowait()
-        except queue.Empty:
-            continue
+            data_manager.receive_new_entries()
 
-        batch_generator.store_batch(data_store, batch_idxs)
-        learn_batch = batch_generator.get_batch()
-        learner.learn_step(learn_batch)
-
-        while not env_log_queue.empty():
-            logger.record_type(*env_log_queue.get_nowait())
+        learn_batch = data_manager.sample_data(batch_size)
+        if learn_batch is not None:
+            learner.learn_step(learn_batch)
 
         if time.time()/log_frequency > prev_time:
             logger.dump()

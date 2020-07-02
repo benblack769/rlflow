@@ -67,11 +67,12 @@ class ActCriticPolicy(torch.nn.Module):
         self.noise_model = noise_model
         self.device = device
 
-    def calc_action(self, observations):
-        observations = torch.tensor(observations, device=self.device)
-        features = self.feature_extractor(observations)
-        action = self.noise_model.add_noise(self.actor.calc_action(features))
-        return action.detach().cpu().numpy()
+    def calc_action(self, observations):        
+        with torch.no_grad():
+            observations = torch.tensor(observations, device=self.device)
+            features = self.feature_extractor(observations)
+            action = self.noise_model.add_noise(self.actor.calc_action(features))
+            return action.detach().cpu().numpy()
 
     def get_params(self):
         return [param.cpu().detach().numpy() for param in self.parameters()]
