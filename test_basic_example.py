@@ -4,7 +4,6 @@ import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
-from rlflow.wrappers.adder_wrapper import AdderWrapper
 from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 from gym.vector import SyncVectorEnv
@@ -31,7 +30,6 @@ def main():
         env_fn,
         SyncVectorEnv,
         lambda: TransitionAdder(env.observation_space, env.action_space),
-        AdderWrapper,
         DensitySampleScheme(data_store_size),
         data_store_size,
         batch_size,

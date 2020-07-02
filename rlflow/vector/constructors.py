@@ -13,6 +13,8 @@ def MakeCPUAsyncConstructor(max_num_cpus):
         return ConcatVecEnv
     else:
         def constructor(env_fn_list, obs_space, act_space):
+            example_env = env_fn_list[0]()
+            envs_per_env = getattr(example_env,"num_envs",1)
             num_fns = len(env_fn_list)
             envs_per_cpu = (num_fns+max_num_cpus-1)// max_num_cpus
             alloced_num_cpus = (num_fns+envs_per_cpu-1) // envs_per_cpu
@@ -28,5 +30,5 @@ def MakeCPUAsyncConstructor(max_num_cpus):
             assert alloced_num_cpus == len(env_cpu_div)
 
             cat_env_fns = [call_wrap(ConcatVecEnv, env_fns) for env_fns in env_cpu_div]
-            return ProcConcatVec(cat_env_fns, obs_space, act_space, num_fns)
+            return ProcConcatVec(cat_env_fns, obs_space, act_space, num_fns*envs_per_env)
         return constructor

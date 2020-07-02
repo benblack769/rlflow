@@ -23,11 +23,13 @@ def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, po
     example_env = env_fn()
 
     vec_env = vec_env_fn([env_fn]*n_envs, example_env.observation_space, example_env.action_space)
+    del example_env
+    num_envs = vec_env.num_envs
 
     actor = actor_fn()
 
-    adders = [adder_fn() for _ in range(n_envs)]
-    log_adders = [log_adder_fn() for _ in range(n_envs)]
+    adders = [adder_fn() for _ in range(num_envs)]
+    log_adders = [log_adder_fn() for _ in range(num_envs)]
 
     for adder,entry_pipe in zip(adders, new_entry_pipes):
         adder.set_generate_callback(entry_pipe.store)
@@ -35,8 +37,8 @@ def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, po
     for log_adder in log_adders:
         log_adder.set_generate_callback(logger_pipe.put)
 
-    dones = np.zeros(n_envs,dtype=np.bool)
-    infos = [{} for _ in range(n_envs)]
+    dones = np.zeros(num_envs,dtype=np.bool)
+    infos = [{} for _ in range(num_envs)]
     obss = vec_env.reset()
 
     for act_step in range(1000000):
@@ -62,7 +64,6 @@ def run_loop(
         environment_fn,
         vec_environment_fn,
         adder_fn,
-        adder_wrapper_fn,
         replay_sampler,
         data_store_size,
         batch_size,
@@ -74,6 +75,11 @@ def run_loop(
 
     example_adder = adder_fn()
 
+    example_env = environment_fn()
+    envs_per_env = getattr(example_env, "num_envs", 1)
+    del example_env
+    num_envs = n_envs*envs_per_env
+
     transition_example = example_adder.get_example_output()
     removal_scheme = FifoScheme()
     sample_scheme = replay_sampler
@@ -82,7 +88,7 @@ def run_loop(
 
     batch_store = SharedMemPipe(expand_example(transition_example, batch_size))
 
-    new_entry_pipes = [SharedMemPipe(transition_example) for _ in range(n_envs)]
+    new_entry_pipes = [SharedMemPipe(transition_example) for _ in range(num_envs)]
     logger_adder_fn = LoggerAdder
 
     mp.Process(target=run_batch_generator,args=(transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, batch_size, terminate_event, env_log_queue)).start()
