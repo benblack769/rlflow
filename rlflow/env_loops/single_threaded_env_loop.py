@@ -5,6 +5,7 @@ import multiprocessing as mp
 import queue
 from rlflow.adders.logger_adder import LoggerAdder
 from rlflow.utils.shared_mem_pipe import SharedMemPipe, expand_example
+from rlflow.selectors.priority_updater import priority_pipe_example, PriorityUpdater, NoUpdater
 import time
 
 def noop(x):
@@ -21,6 +22,7 @@ def run_loop(
         replay_sampler,
         data_store_size,
         batch_size,
+        priority_updater=NoUpdater(),
         n_envs=1,
         log_frequency=100,
         ):
@@ -39,6 +41,8 @@ def run_loop(
     removal_scheme = FifoScheme()
     sample_scheme = replay_sampler
     new_entry_pipes = [SharedMemPipe(transition_example) for _ in range(num_envs)]
+
+    priority_updater.set_data_pipe(SharedMemPipe(priority_pipe_example(batch_size)))
 
     data_manager = DataManager(new_entry_pipes, transition_example, removal_scheme, sample_scheme, data_store_size)
 
@@ -71,9 +75,15 @@ def run_loop(
 
             data_manager.receive_new_entries()
 
-        learn_batch = data_manager.sample_data(batch_size)
+        learn_idxs, learn_batch = data_manager.sample_data(batch_size)
         if learn_batch is not None:
-            learner.learn_step(learn_batch)
+            learner.learn_step(learn_idxs, learn_batch)
+
+            density_result = priority_updater.fetch_densities()
+            if density_result is not None:
+                ids, priorities = density_result
+                data_manager.sample_scheme.update_priorities(ids, priorities)
+                data_manager.removal_scheme.update_priorities(ids, priorities)
 
         if time.time()/log_frequency > prev_time:
             logger.dump()

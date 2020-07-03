@@ -28,6 +28,7 @@ class SharedMemPipe:
 
     def store(self, data_store):
         self.is_empty.wait()
+        assert len(data_store) == len(self.shared_data)
         for source, dest in zip(data_store, self.shared_data):
             np.copyto(dest.np_arr, source)
         self.is_full.set()

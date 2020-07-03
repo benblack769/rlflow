@@ -1,9 +1,10 @@
 import collections
 import numpy as np
 from .segment_tree import SumSegmentTree, MinSegmentTree
+from .base import BaseScheme
 
-class DensitySampleScheme:
-    def __init__(self, max_size, max_priority=1e7, seed=None):
+class DensitySampleScheme(BaseScheme):
+    def __init__(self, max_size, max_priority=1e7, epsilon=1e-7, seed=None):
         """
         Samples based off density of their weight
 
@@ -18,6 +19,7 @@ class DensitySampleScheme:
             it_capacity *= 2
 
         self._it_sum = SumSegmentTree(it_capacity)
+        self.epsilon = epsilon
 
         self.sample_idxs = np.zeros(max_size, dtype=np.int32)
         self.data_idxs = np.zeros(max_size, dtype=np.int32)
@@ -40,6 +42,14 @@ class DensitySampleScheme:
             return None
         else:
             idxs = self._sample_proportional(batch_size)
+            idxs = np.unique(idxs)
+            self._it_sum[idxs] = self.epsilon
+            while len(idxs) != batch_size:
+                add_idxs = self._sample_proportional(batch_size-len(idxs))
+                self._it_sum[add_idxs] = self.epsilon
+                idxs = np.concatenate([idxs,add_idxs],axis=0)
+                idxs = np.unique(idxs)
+
             ids = self.data_idxs[idxs]
             return ids
 
@@ -72,4 +82,4 @@ class DensitySampleScheme:
         assert np.min(weights) > 0
         assert 0 <= np.min(ids) < self.max_size
         idxes = self.sample_idxs[ids]
-        self._it_sum[idxes] = weights
+        self._it_sum[idxes] = self.epsilon + weights

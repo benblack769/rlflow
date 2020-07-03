@@ -13,5 +13,5 @@ class BaseScheme:
         '''
         removes the id from the data
         '''
-    def update_priorities(self, idxs, priorities):
+    def update_priorities(self, ids, priorities):
         '''priority: priority of data (only needed for selectors which use it, can be ignored)'''

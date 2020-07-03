@@ -8,6 +8,7 @@ from rlflow.adders.transition_adder import TransitionAdder
 from rlflow.selectors import DensitySampleScheme
 from rlflow.utils.logger import make_logger
 from rlflow.vector import MakeCPUAsyncConstructor
+from rlflow.selectors.priority_updater import PriorityUpdater
 from gym.vector import SyncVectorEnv, AsyncVectorEnv
 from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale, dtype
 import numpy as np
@@ -33,10 +34,11 @@ def main():
     batch_size = 128
     n_envs = 64
     n_cpus = 8
+    priority_updater = PriorityUpdater(alpha=0.5)
     logger = make_logger("log")
     run_loop(
         logger,
-        lambda: DDPGLearner(policy_fn, action_normalizer, 0.001, 0.99, 0.1, logger, device),
+        lambda: DDPGLearner(policy_fn, action_normalizer, 0.001, 0.99, 0.1, logger, priority_updater, device),
         OccasionalUpdate(10, policy_fn_dev("cpu")),
         lambda: StatelessActor(policy_fn()),
         env_fn,
@@ -45,7 +47,8 @@ def main():
         DensitySampleScheme(data_store_size),
         data_store_size,
         batch_size,
-        n_envs,
+        n_envs=n_envs,
+        priority_updater=priority_updater,
         log_frequency=15,
     )
 main()

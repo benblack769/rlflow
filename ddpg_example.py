@@ -67,7 +67,7 @@ class ActCriticPolicy(torch.nn.Module):
         self.noise_model = noise_model
         self.device = device
 
-    def calc_action(self, observations):        
+    def calc_action(self, observations):
         with torch.no_grad():
             observations = torch.tensor(observations, device=self.device)
             features = self.feature_extractor(observations)
@@ -97,10 +97,11 @@ class BoxActionNormalizer:
         return (((action + 1)/2) * (self.high - self.low)) + self.low
 
 class DDPGLearner:
-    def __init__(self, policy_fn, action_normalizer_fn, lr, gamma, target_update_val, logger, device):
+    def __init__(self, policy_fn, action_normalizer_fn, lr, gamma, target_update_val, logger, priority_updater, device):
         self.policy = policy_fn()
         self.delayed_policy = policy_fn()
         self.action_normalizer = action_normalizer_fn()
+        self.priority_updater = priority_updater
         copy_params(self.delayed_policy, self.policy)
         self.gamma = gamma
         self.target_update_val = target_update_val
@@ -108,7 +109,7 @@ class DDPGLearner:
         self.device = device
         self.optimizer = torch.optim.RMSprop(self.policy.parameters(), lr=lr)
 
-    def learn_step(self, transition_batch):
+    def learn_step(self, idxs, transition_batch):
         Otm1, action, rew, done, Ot = transition_batch
         batch_size = len(Ot)
         Otm1 = torch.tensor(Otm1, device=self.device)
@@ -148,12 +149,17 @@ class DDPGLearner:
 
         critic_eval1 = self.policy.critic1.q_val(action, features)
         critic_eval2 = self.policy.critic2.q_val(action, features)
-        critic_loss = F.mse_loss(critic_eval1, total_rew) + F.mse_loss(critic_eval2, total_rew)
+        td_loss_sqr = (critic_eval1 - total_rew)**2 + (critic_eval2 - total_rew)**2
+        abs_td_loss = torch.sqrt(td_loss_sqr)
+
+        critic_loss = td_loss_sqr.mean()
 
         critic_loss.backward()
         self.optimizer.step()
 
         copy_params(self.delayed_policy,self.policy,self.target_update_val)
+
+        self.priority_updater.update_td_error(idxs, abs_td_loss.cpu().detach().numpy())
 
         self.logger.record_mean("actor_loss", actor_loss.detach().cpu().numpy())
         self.logger.record_mean("critic_loss", critic_loss.detach().cpu().numpy())

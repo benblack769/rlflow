@@ -1,5 +1,6 @@
 import collections
 import numpy as np
+from .base import BaseScheme
 
 class LLNode:
     def __init__(self, prev, next, val):
@@ -55,7 +56,7 @@ class LList:
     def __len__(self):
         return self.size
 
-class FifoScheme:
+class FifoScheme(BaseScheme):
     def __init__(self):
         self.queue = LList()
         self.nodes = {}

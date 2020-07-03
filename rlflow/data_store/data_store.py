@@ -43,9 +43,9 @@ class DataManager:
     def sample_data(self, batch_size):
         sample_idxs = self.sample_scheme.sample(batch_size)
         if sample_idxs is None:
-            return None
+            return None, None
         else:
-            return self._get_data(sample_idxs)
+            return sample_idxs, self._get_data(sample_idxs)
 
     def _add_item(self, id, transition):
         for data,trans in zip(self.data,transition):

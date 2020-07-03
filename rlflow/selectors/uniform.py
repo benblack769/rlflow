@@ -1,7 +1,8 @@
 import numpy as np
 import warnings
+from .base import BaseScheme
 
-class UniformSampleScheme:
+class UniformSampleScheme(BaseScheme):
     def __init__(self, max_size, seed=None):
         self.sample_idxs = np.zeros(max_size, dtype=np.int32)
         self.data_idxs = np.zeros(max_size, dtype=np.int32)
