@@ -33,7 +33,7 @@ def main():
         DensitySampleScheme(data_store_size),
         data_store_size,
         batch_size,
-        n_envs,
+        n_envs=n_envs,
         log_frequency=5
     )
 main()

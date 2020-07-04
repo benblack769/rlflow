@@ -30,18 +30,21 @@ def run_batch_generator(transition_example, removal_scheme, sample_scheme, max_e
                 store_data = [batch_idxs]+list(batch_data)
                 batch_store.store(store_data)
 
-def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_env_fn, env_fn, logger_pipe):
+def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_env_fn, env_fn, logger_pipe, data_store_size):
     example_env = env_fn()
 
     vec_env = vec_env_fn([env_fn]*n_envs, example_env.observation_space, example_env.action_space)
     del example_env
     num_envs = vec_env.num_envs
 
+    act_steps_until_learn = data_store_size / num_envs
+
     actor = actor_fn()
 
     adders = [adder_fn() for _ in range(num_envs)]
     log_adders = [log_adder_fn() for _ in range(num_envs)]
 
+    assert len(adders) == len(new_entry_pipes)
     for adder,entry_pipe in zip(adders, new_entry_pipes):
         adder.set_generate_callback(entry_pipe.store)
 
@@ -55,9 +58,13 @@ def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, po
     for act_step in range(1000000):
         policy_delayer.actor_step(actor.policy)
 
-        actions = actor.step(obss, dones, infos)
+        if act_step < act_steps_until_learn:
+            actions = [vec_env.action_space.sample() for _ in range(num_envs)]
+        else:
+            actions = actor.step(obss, dones, infos)
 
         obss, rews, dones, infos = vec_env.step(actions)
+
         for i in range(len(obss)):
             obs,act,rew,done,info = obss[i], actions[i], rews[i], dones[i], infos[i]
             adders[i].add(obs,act,rew,done,info)
@@ -81,6 +88,7 @@ def run_loop(
         priority_updater=NoUpdater(),
         n_envs=4,
         log_frequency=100,
+        act_steps_until_learn=None,
         ):
 
     terminate_event = mp.Event()
@@ -106,7 +114,7 @@ def run_loop(
     logger_adder_fn = LoggerAdder
 
     mp.Process(target=run_batch_generator,args=(transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, terminate_event, env_log_queue)).start()
-    mp.Process(target=run_actor_loop,args=(actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_environment_fn, environment_fn, env_log_queue)).start()
+    mp.Process(target=run_actor_loop,args=(actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_environment_fn, environment_fn, env_log_queue, data_store_size)).start()
 
     learner = learner_fn()
     prev_time = time.time()/log_frequency

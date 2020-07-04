@@ -96,17 +96,41 @@ class BoxActionNormalizer:
     def unnormalize(self, norm_actions):
         return (((action + 1)/2) * (self.high - self.low)) + self.low
 
+class AdaptiveRewardNormalizer:
+    def __init__(self, device, update_decay=0.99):
+        self.mean = torch.tensor(0.0,device=device)
+        self.stdev = torch.tensor(1.0,device=device)
+        self.update_decay = update_decay
+
+    def update_stats(self, rewards):
+        return
+        self.mean.data = self.mean * self.update_decay + (1 - self.update_decay) * torch.mean(rewards)
+        cur_stdev = torch.sqrt(torch.mean((self.mean - rewards)**2))
+        # no decayed update for stdev because we want to overestimate in case of dramatic
+        # variation between time steps
+        # and since stdev is calculated over decayed mean, it should be very high
+        # in case of dramatic varation between time steps
+        self.stdev.data = self.stdev * self.update_decay + (1 - self.update_decay) * cur_stdev
+
+    def normalize(self, rewards):
+        return (rewards - self.mean) / self.stdev
+
+    def invert(self, rewards):
+        return (rewards * self.stdev) + self.mean
+
 class DDPGLearner:
-    def __init__(self, policy_fn, action_normalizer_fn, lr, gamma, target_update_val, logger, priority_updater, device):
+    def __init__(self, policy_fn, action_normalizer_fn, reward_normalizer_fn, lr, gamma, target_update_val, logger, priority_updater, device):
         self.policy = policy_fn()
         self.delayed_policy = policy_fn()
         self.action_normalizer = action_normalizer_fn()
+        self.reward_normalizer = reward_normalizer_fn()
         self.priority_updater = priority_updater
         copy_params(self.delayed_policy, self.policy)
         self.gamma = gamma
         self.target_update_val = target_update_val
         self.logger = logger
         self.device = device
+        self.num_steps = 0
         self.optimizer = torch.optim.RMSprop(self.policy.parameters(), lr=lr)
 
     def learn_step(self, idxs, transition_batch):
@@ -125,22 +149,26 @@ class DDPGLearner:
             target_features = self.delayed_policy.feature_extractor(Ot)
             target_action = self.delayed_policy.actor.calc_action(target_features)
             target_action = self.delayed_policy.noise_model.add_noise(target_action)
-            target_q = torch.min(
+            target_q_norm = torch.min(
                 self.delayed_policy.critic1.q_val(target_action, target_features),
                 self.delayed_policy.critic2.q_val(target_action, target_features)
             )
+            self.reward_normalizer.update_stats(target_q_norm)
+            target_q = self.reward_normalizer.invert(target_q_norm)
 
         future_rew = ~done * target_q
         discounted_fut_rew = self.gamma * future_rew
         total_rew = rew + future_rew
         total_rew = total_rew.detach()
+        total_rew = self.reward_normalizer.normalize(total_rew)
+        total_rew = total_rew.detach()
+        #rint(torch.mean(rew), torch.mean(target_q_norm), torch.mean(total_rew), self.reward_normalizer.mean, self.reward_normalizer.stdev)
 
         features = self.policy.feature_extractor(Otm1)
 
-        pred_actions = self.policy.actor.calc_action(features)
+        pred_actions = self.policy.actor.calc_action(features.detach())
         critic_eval1 = self.policy.critic1.q_val(pred_actions, features.detach())
         actor_loss = -critic_eval1.mean()
-
         self.optimizer.zero_grad()
         actor_loss.backward(retain_graph=True)
         # set critic grad to zero to stop actor step updating critic
@@ -155,12 +183,16 @@ class DDPGLearner:
         critic_loss = td_loss_sqr.mean()
 
         critic_loss.backward()
-        self.optimizer.step()
+        if self.num_steps > 5:
+            self.optimizer.step()
 
         copy_params(self.delayed_policy,self.policy,self.target_update_val)
 
         self.priority_updater.update_td_error(idxs, abs_td_loss.cpu().detach().numpy())
 
         self.logger.record_mean("actor_loss", actor_loss.detach().cpu().numpy())
+        self.logger.record_mean("reward_mean", self.reward_normalizer.mean.detach().cpu().numpy())
+        self.logger.record_mean("reward_stdev", self.reward_normalizer.stdev.detach().cpu().numpy())
         self.logger.record_mean("critic_loss", critic_loss.detach().cpu().numpy())
         self.logger.record_sum("learner_steps", batch_size)
+        self.num_steps += 1

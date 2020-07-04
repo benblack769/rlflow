@@ -40,7 +40,7 @@ class DQNLearner:
         self.device = device
         self.optimizer = torch.optim.Adam(self.policy.model.parameters(), lr=lr)
 
-    def learn_step(self, transition_batch):
+    def learn_step(self, idxs, transition_batch):
         model = self.policy.model
         Otm1, action, rew, done, Ot = transition_batch
         batch_size = len(Ot)
