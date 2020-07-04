@@ -19,33 +19,31 @@ class SharedMemPipe:
             self.shared_data.append(data_entry)
             self.copied_data.append(np.empty(arr.shape,dtype=arr.dtype))
 
-        self.is_full = mp.Event()
-        self.is_empty = mp.Event()
-        self.is_empty.set()
+        self.lock = mp.Lock()
+        self.stored = mp.Event()
 
     def can_store(self):
-        return self.is_empty.is_set()
+        with self.lock:
+            return not self.stored.is_set()
 
     def store(self, data_store):
-        self.is_empty.wait()
         assert len(data_store) == len(self.shared_data)
-        for source, dest in zip(data_store, self.shared_data):
-            np.copyto(dest.np_arr, source)
-        self.is_full.set()
-        self.is_empty.clear()
+        with self.lock:
+            for source, dest in zip(data_store, self.shared_data):
+                np.copyto(dest.np_arr, source)
+            self.stored.set()
 
     def get_wait(self):
-        self.is_full.wait()
+        with self.lock:
+            for dest,src in zip(self.copied_data, self.shared_data):
+                np.copyto(dest, src.np_arr)
+            self.stored.clear()
 
-        for dest,src in zip(self.copied_data, self.shared_data):
-            np.copyto(dest, src.np_arr)
-
-        self.is_full.clear()
-        self.is_empty.set()
         return self.copied_data
 
     def get(self):
-        if not self.is_full.is_set():
-            return None
+        with self.lock:
+            if not self.stored.is_set():
+                return None
 
         return self.get_wait()

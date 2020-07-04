@@ -17,7 +17,7 @@ from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, VecTra
 from gym.vector import SyncVectorEnv
 from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv, SpaceWrap
 
-from pettingzoo.mpe import simple_push_v0
+from pettingzoo.sisl import waterworld_v0
 from supersuit.aec_wrappers import pad_observations, pad_action_space
 import copy
 # def vec_env_constr(env_fns, obs_space, act_space):
@@ -26,14 +26,15 @@ import copy
 #     return ConcatVecEnv([make_dummy_fn]*num_envs, obs_space, act_space)
 
 def env_fn():
-    #return  continuous_actions(gym.make("CartPole-v0"))#
-    env = simple_push_v0.env()
-    env = pad_observations(env)
-    env = pad_action_space(env)
-    env = continuous_actions(env)
+    #env = gym.make("CartPole-v0")#
+    env = waterworld_v0.env()
+    # env = pad_observations(env)
+    # env = pad_action_space(env)
+    #env = continuous_actions(env)
     markov_env = aec_to_markov(env)
     venv = MarkovVectorEnv(markov_env)
     return venv
+
 
 def main():
     n_envs = 8

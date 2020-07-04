@@ -143,7 +143,7 @@ class DDPGLearner:
         done = torch.tensor(done, device=self.device)
         Ot = torch.tensor(Ot, device=self.device)
 
-        normalize_action = self.policy.action_normalizer.normalize(action)
+        action = self.policy.action_normalizer.normalize(action)
 
         # compute target
         with torch.no_grad():

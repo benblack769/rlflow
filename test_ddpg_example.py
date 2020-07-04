@@ -13,7 +13,7 @@ from gym.vector import SyncVectorEnv, AsyncVectorEnv
 from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale, dtype
 import numpy as np
 import supersuit.aec_wrappers
-from pettingzoo.mpe import simple_push_v0
+from pettingzoo.sisl import waterworld_v0
 from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv, SpaceWrap
 
 
@@ -23,12 +23,12 @@ from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVe
 #     return env
 def env_fn():
     #env = gym.make("CartPole-v0")#
-    env = simple_push_v0.env()
+    env = waterworld_v0.env()
     # print(env.action_spaces.values())
     # exit(0)
     env = supersuit.aec_wrappers.pad_observations(env)
     env = supersuit.aec_wrappers.pad_action_space(env)
-    env = supersuit.aec_wrappers.continuous_actions(env)
+    #env = supersuit.aec_wrappers.continuous_actions(env)
     markov_env = aec_to_markov(env)
     venv = MarkovVectorEnv(markov_env)
     return venv
