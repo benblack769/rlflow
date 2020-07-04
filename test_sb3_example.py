@@ -26,7 +26,7 @@ import copy
 #     return ConcatVecEnv([make_dummy_fn]*num_envs, obs_space, act_space)
 
 def env_fn():
-    #env = gym.make("CartPole-v0")#
+    #return  continuous_actions(gym.make("CartPole-v0"))#
     env = simple_push_v0.env()
     env = pad_observations(env)
     env = pad_action_space(env)

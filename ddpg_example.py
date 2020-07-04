@@ -57,7 +57,7 @@ class ClippedGuassianNoiseModel:
         return (action + noise).clamp(-1, 1)
 
 class ActCriticPolicy(torch.nn.Module):
-    def __init__(self, obs_space, act_space, device, noise_model):
+    def __init__(self, obs_space, act_space, device, noise_model, action_normalizer):
         super().__init__()
         num_features = 512
         self.feature_extractor = FeatureExtractor(obs_space, num_features, device)
@@ -65,6 +65,7 @@ class ActCriticPolicy(torch.nn.Module):
         self.critic1 = Critic(num_features, act_space, device)
         self.critic2 = Critic(num_features, act_space, device)
         self.noise_model = noise_model
+        self.action_normalizer = action_normalizer
         self.device = device
 
     def calc_action(self, observations):
@@ -72,7 +73,8 @@ class ActCriticPolicy(torch.nn.Module):
             observations = torch.tensor(observations, device=self.device)
             features = self.feature_extractor(observations)
             action = self.noise_model.add_noise(self.actor.calc_action(features))
-            return action.detach().cpu().numpy()
+            rescaled_action = self.action_normalizer.unnormalize(action)
+            return rescaled_action.detach().cpu().numpy()
 
     def get_params(self):
         return [param.cpu().detach().numpy() for param in self.parameters()]
@@ -94,7 +96,7 @@ class BoxActionNormalizer:
         return ((action - self.low) / (self.high - self.low) * 2) - 1
 
     def unnormalize(self, norm_actions):
-        return (((action + 1)/2) * (self.high - self.low)) + self.low
+        return (((norm_actions + 1)/2) * (self.high - self.low)) + self.low
 
 class AdaptiveRewardNormalizer:
     def __init__(self, device, update_decay=0.99):
@@ -119,10 +121,9 @@ class AdaptiveRewardNormalizer:
         return (rewards * self.stdev) + self.mean
 
 class DDPGLearner:
-    def __init__(self, policy_fn, action_normalizer_fn, reward_normalizer_fn, lr, gamma, target_update_val, logger, priority_updater, device):
+    def __init__(self, policy_fn, reward_normalizer_fn, lr, gamma, target_update_val, logger, priority_updater, device):
         self.policy = policy_fn()
         self.delayed_policy = policy_fn()
-        self.action_normalizer = action_normalizer_fn()
         self.reward_normalizer = reward_normalizer_fn()
         self.priority_updater = priority_updater
         copy_params(self.delayed_policy, self.policy)
@@ -142,7 +143,7 @@ class DDPGLearner:
         done = torch.tensor(done, device=self.device)
         Ot = torch.tensor(Ot, device=self.device)
 
-        normalize_action = self.action_normalizer.normalize(action)
+        normalize_action = self.policy.action_normalizer.normalize(action)
 
         # compute target
         with torch.no_grad():

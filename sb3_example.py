@@ -65,7 +65,7 @@ class SB3LearnWrapper:
     def to_torch(self, array: np.ndarray, copy: bool = True) -> th.Tensor:
         return th.tensor(array, requires_grad=False).to(self.device)
 
-    def learn_step(self, transition_batch):
+    def learn_step(self, idxs, transition_batch):
         batch_size = len(transition_batch[0])
         cur_obs, action, rew, done, last_obs = transition_batch
         done = done.astype(np.float32)
@@ -94,7 +94,7 @@ class SB3OnlineLearnWrapper:
             self.sb3_learner.action_noise.reset()
 
 
-    def learn_step(self, transition_batch):
+    def learn_step(self, idxs, transition_batch):
         data = ReplayBufferSamples(*tuple(map(self.to_torch, transition_batch)))
         buff_wrap = RolloutBuffWrap(data)
         self.sb3_learner.rollout_buffer = buff_wrap
