@@ -10,12 +10,12 @@ from rlflow.utils.logger import make_logger
 from rlflow.vector import MakeCPUAsyncConstructor
 from rlflow.selectors.priority_updater import PriorityUpdater
 from gym.vector import SyncVectorEnv, AsyncVectorEnv
-from supersuit.gym_wrappers import normalize_obs, continuous_actions, down_scale, dtype
+from supersuit.gym_wrappers import normalize_obs, resize, dtype
 import numpy as np
 import supersuit.aec_wrappers
 from pettingzoo.sisl import waterworld_v0
 from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv, SpaceWrap
-
+from rlflow.utils.saver import Saver, load_latest
 
 # def env_fn():
 #     env = down_scale(continuous_actions(gym.make("SpaceInvaders-v4")), 2, 3)
@@ -43,7 +43,11 @@ def main():
     device = "cuda"
     noise_model = ClippedGuassianNoiseModel()
     action_normalizer_fn = lambda device: BoxActionNormalizer(env.action_space, device)
-    policy_fn_dev = lambda device: ActCriticPolicy(env.observation_space, env.action_space, device, noise_model, action_normalizer_fn(device))
+    save_folder = "savedata/"
+    def policy_fn_dev(device):
+        policy = ActCriticPolicy(env.observation_space, env.action_space, device, noise_model, action_normalizer_fn(device))
+        load_latest(save_folder, policy)
+        return policy
     policy_fn = lambda: policy_fn_dev(device)
     reward_normalizer_fn = lambda: AdaptiveRewardNormalizer(device)
     data_store_size = 50000
@@ -58,6 +62,7 @@ def main():
         OccasionalUpdate(10, policy_fn_dev("cpu")),
         lambda: StatelessActor(policy_fn()),
         env_fn,
+        Saver(save_folder),
         MakeCPUAsyncConstructor(n_cpus),
         lambda: TransitionAdder(env.observation_space, env.action_space),
         DensitySampleScheme(data_store_size),
@@ -65,6 +70,6 @@ def main():
         batch_size,
         n_envs=n_envs,
         priority_updater=priority_updater,
-        log_frequency=5,
+        log_frequency=0.1,
     )
 main()

@@ -17,6 +17,7 @@ def run_loop(
         policy_delayer,
         actor_fn,
         environment_fn,
+        saver,
         vec_environment_fn,
         adder_fn,
         replay_sampler,
@@ -87,4 +88,5 @@ def run_loop(
 
         if time.time()/log_frequency > prev_time:
             logger.dump()
+            saver.checkpoint(learner.policy)
             prev_time += 1

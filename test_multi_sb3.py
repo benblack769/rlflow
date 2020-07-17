@@ -11,7 +11,6 @@ from stable_baselines3 import TD3
 from stable_baselines3.td3 import MlpPolicy
 from stable_baselines3.common.utils import get_schedule_fn
 import supersuit
-from supersuit.gym_wrappers import continuous_actions
 from stable_baselines3.common.vec_env import VecFrameStack, VecNormalize, VecTransposeImage, DummyVecEnv
 from rlflow.vector import MakeCPUAsyncConstructor
 

@@ -72,7 +72,8 @@ class ActCriticPolicy(torch.nn.Module):
         with torch.no_grad():
             observations = torch.tensor(observations, device=self.device)
             features = self.feature_extractor(observations)
-            action = self.noise_model.add_noise(self.actor.calc_action(features))
+            action = self.actor.calc_action(features)
+            action = self.noise_model.add_noise(action)
             rescaled_action = self.action_normalizer.unnormalize(action)
             return rescaled_action.detach().cpu().numpy()
 
