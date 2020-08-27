@@ -51,7 +51,6 @@ env = env_fn()
 #             obss, rews, dones, infos = vec_env.step(actions)
 
 def main():
-
     device = "cuda"
     noise_model = ClippedGuassianNoiseModel()
     action_normalizer_fn = lambda device: BoxActionNormalizer(env.action_space, device)
@@ -65,7 +64,7 @@ def main():
     data_store_size = 50000
     batch_size = 256
     n_envs = 16
-    n_cpus = 0
+    n_cpus = 16
     priority_updater = PriorityUpdater()
     logger = make_logger("log")
     run_loop(
