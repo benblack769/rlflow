@@ -139,7 +139,7 @@ def run_loop(
         ids = learn_batch[0]
         weights = learn_batch[1]
         transition_data = learn_batch[2:]
-        learner.learn_step(ids, transition_data)
+        learner.learn_step(ids, transition_data, weights)
 
         while not env_log_queue.empty():
             logger.record_type(*env_log_queue.get_nowait())

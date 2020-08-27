@@ -81,7 +81,7 @@ def run_loop(
 
         learn_idxs, learn_weights, learn_batch = data_manager.sample_data(batch_size)
         if learn_batch is not None:
-            learner.learn_step(learn_idxs, learn_weights, learn_batch)
+            learner.learn_step(learn_idxs, learn_batch, learn_weights)
             learn_steps += 1
 
             density_result = priority_updater.fetch_densities()

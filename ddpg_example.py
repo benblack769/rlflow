@@ -135,7 +135,7 @@ class DDPGLearner:
         self.num_steps = 0
         self.optimizer = torch.optim.RMSprop(self.policy.parameters(), lr=lr)
 
-    def learn_step(self, idxs, transition_batch):
+    def learn_step(self, idxs, transition_batch, weights):
         Otm1, action, rew, done, Ot = transition_batch
         batch_size = len(Ot)
         Otm1 = torch.tensor(Otm1, device=self.device)
@@ -143,6 +143,7 @@ class DDPGLearner:
         rew = torch.tensor(rew, device=self.device)
         done = torch.tensor(done, device=self.device)
         Ot = torch.tensor(Ot, device=self.device)
+        weights = torch.tensor(weights, device=self.device)
 
         action = self.policy.action_normalizer.normalize(action)
 
@@ -193,8 +194,8 @@ class DDPGLearner:
         self.priority_updater.update_td_error(idxs, abs_td_loss.cpu().detach().numpy())
 
         self.logger.record_mean("actor_loss", actor_loss.detach().cpu().numpy())
-        self.logger.record_mean("reward_mean", self.reward_normalizer.mean.detach().cpu().numpy())
-        self.logger.record_mean("reward_stdev", self.reward_normalizer.stdev.detach().cpu().numpy())
+        # self.logger.record_mean("reward_mean", self.reward_normalizer.mean.detach().cpu().numpy())
+        # self.logger.record_mean("reward_stdev", self.reward_normalizer.stdev.detach().cpu().numpy())
         self.logger.record_mean("critic_loss", critic_loss.detach().cpu().numpy())
         self.logger.record_sum("learner_steps", batch_size)
         self.num_steps += 1
