@@ -30,7 +30,7 @@ class DataManager:
             new_id = self.init_add_idx
             self.init_add_idx += 1
         else:
-            remove_vals = self.removal_scheme.sample(1)
+            remove_vals,rm_weights = self.removal_scheme.sample(1)
             assert remove_vals is not None, "tried to remove item and could not, something is wrong with removal scheme or replay buffer size is too small"
             new_id = remove_vals[0]
             self.removal_scheme.remove(new_id)

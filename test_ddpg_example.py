@@ -70,7 +70,7 @@ def main():
     run_loop(
         logger,
         lambda: DDPGLearner(policy_fn, reward_normalizer_fn, 0.001, 0.99, 0.1, logger, priority_updater, device),
-        OccasionalUpdate(10, policy_fn_dev("cpu")),
+        OccasionalUpdate(10, lambda:policy_fn_dev("cpu")),
         lambda: StatelessActor(policy_fn()),
         env_fn,
         Saver(save_folder),
@@ -81,7 +81,7 @@ def main():
         batch_size,
         n_envs=n_envs,
         priority_updater=priority_updater,
-        log_frequency=0.1,
+        log_frequency=5,
         max_learn_steps=1000,
     )
 main()

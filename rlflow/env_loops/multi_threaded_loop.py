@@ -72,6 +72,8 @@ def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_
     infos = [{} for _ in range(num_envs)]
     obss = vec_env.reset()
 
+    start_tot = time.time()
+    tot_time = 0
     for act_step in range(1000000):
         if terminate_event.is_set():
             break
