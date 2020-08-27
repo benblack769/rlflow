@@ -16,10 +16,10 @@ class UniformSampleScheme(BaseScheme):
         self.num_idxs += 1
     def sample(self, batch_size):
         if self.num_idxs < batch_size:
-            return None
+            return None, None
         else:
             idxs = self.np_random.randint(0,self.num_idxs,size=batch_size)
-            return self.data_idxs[idxs]
+            return self.data_idxs[idxs], None
     def remove(self, id):
         idx = self.sample_idxs[id]
         new_idx = self.num_idxs-1

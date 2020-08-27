@@ -41,11 +41,11 @@ class DataManager:
         self._add_item(new_id, add_data)
 
     def sample_data(self, batch_size):
-        sample_idxs = self.sample_scheme.sample(batch_size)
+        sample_idxs, sample_weights = self.sample_scheme.sample(batch_size)
         if sample_idxs is None:
-            return None, None
+            return None, None, None
         else:
-            return sample_idxs, self._get_data(sample_idxs)
+            return sample_idxs, sample_weights, self._get_data(sample_idxs)
 
     def _add_item(self, id, transition):
         for data,trans in zip(self.data,transition):

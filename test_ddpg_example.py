@@ -35,10 +35,22 @@ def env_fn():
 
 # def env_fn():
 #     return continuous_actions(gym.make("CartPole-v0"))
+old_policy = None
+env = env_fn()
 
+
+# def backtrace_callback(learner):
+#     global old_policy
+#     if old_policy is None:
+#         old_policy = learner.policy
+#     else:
+#         obss = env.reset()
+#         done = False
+#         while not done:
+#
+#             obss, rews, dones, infos = vec_env.step(actions)
 
 def main():
-    env = env_fn()
 
     device = "cuda"
     noise_model = ClippedGuassianNoiseModel()
@@ -54,7 +66,7 @@ def main():
     batch_size = 256
     n_envs = 16
     n_cpus = 0
-    priority_updater = PriorityUpdater(alpha=0.5)
+    priority_updater = PriorityUpdater()
     logger = make_logger("log")
     run_loop(
         logger,
@@ -65,11 +77,12 @@ def main():
         Saver(save_folder),
         MakeCPUAsyncConstructor(n_cpus),
         lambda: TransitionAdder(env.observation_space, env.action_space),
-        DensitySampleScheme(data_store_size),
+        DensitySampleScheme(data_store_size, alpha=0.5, beta_fn=lambda x:0.5),
         data_store_size,
         batch_size,
         n_envs=n_envs,
         priority_updater=priority_updater,
         log_frequency=0.1,
+        max_learn_steps=1000,
     )
 main()

@@ -25,12 +25,12 @@ def run_batch_generator(transition_example, removal_scheme, sample_scheme, max_e
 
         # store batched samples for learner
         if batch_store.can_store():
-            batch_idxs, batch_data = data_manager.sample_data(batch_size)
+            batch_idxs, batch_weights, batch_data = data_manager.sample_data(batch_size)
             if batch_data is not None:
-                store_data = [batch_idxs]+list(batch_data)
+                store_data = [batch_idxs, batch_weights]+list(batch_data)
                 batch_store.store(store_data)
 
-def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_env_fn, env_fn, logger_pipe, data_store_size):
+def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_env_fn, env_fn, logger_pipe, data_store_size, terminate_event):
     example_env = env_fn()
 
     vec_env = vec_env_fn([env_fn]*n_envs, example_env.observation_space, example_env.action_space)
@@ -56,6 +56,9 @@ def run_actor_loop(actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, po
     obss = vec_env.reset()
 
     for act_step in range(1000000):
+        if terminate_event.is_set():
+            break
+
         policy_delayer.actor_step(actor.policy)
 
         if act_step < act_steps_until_learn:
@@ -90,6 +93,8 @@ def run_loop(
         n_envs=4,
         log_frequency=100,
         act_steps_until_learn=None,
+        max_learn_steps=2**100,
+        log_callback=noop,
         ):
 
     terminate_event = mp.Event()
@@ -109,25 +114,31 @@ def run_loop(
 
     priority_updater.set_data_pipe(SharedMemPipe(priority_pipe_example(batch_size)))
 
-    batch_store = SharedMemPipe([np.empty(batch_size,dtype=np.int64)]+expand_example(transition_example, batch_size))
+    batch_store = SharedMemPipe([np.empty(batch_size,dtype=np.int64), np.empty(batch_size,dtype=np.float32)]+expand_example(transition_example, batch_size))
 
     new_entry_pipes = [SharedMemPipe(transition_example) for _ in range(num_envs)]
     logger_adder_fn = LoggerAdder
 
-    mp.Process(target=run_batch_generator,args=(transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, terminate_event, env_log_queue)).start()
-    mp.Process(target=run_actor_loop,args=(actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_environment_fn, environment_fn, env_log_queue, data_store_size)).start()
+    batch_proc = mp.Process(target=run_batch_generator,args=(transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, terminate_event, env_log_queue))
+    actor_proc = mp.Process(target=run_actor_loop,args=(actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_environment_fn, environment_fn, env_log_queue, data_store_size, terminate_event))
+    procs = [batch_proc, actor_proc]
+
+    for proc in procs:
+        proc.start()
 
     learner = learner_fn()
     prev_time = time.time()/log_frequency
 
-    for train_step in range(1000000):
+    learn_steps = 0
+    for train_step in range(2**100):
         policy_delayer.learn_step(learner.policy)
 
         learn_batch = batch_store.get()
         if learn_batch is None:
             continue
         ids = learn_batch[0]
-        transition_data = learn_batch[1:]
+        weights = learn_batch[1]
+        transition_data = learn_batch[2:]
         learner.learn_step(ids, transition_data)
 
         while not env_log_queue.empty():
@@ -137,3 +148,13 @@ def run_loop(
             logger.dump()
             saver.checkpoint(learner.policy)
             prev_time += 1
+            log_callback(learner)
+
+        if learn_steps >= max_learn_steps:
+            break
+
+        learn_steps += 1
+
+    terminate_event.set()
+    for proc in procs:
+        proc.join()

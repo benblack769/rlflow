@@ -26,6 +26,8 @@ def run_loop(
         priority_updater=NoUpdater(),
         n_envs=1,
         log_frequency=100,
+        max_learn_steps=2**100,
+        log_callback=noop,
         ):
 
 
@@ -60,6 +62,7 @@ def run_loop(
     prev_time = time.time()/log_frequency
 
     obss = vec_env.reset()
+    learn_steps = 0
 
     for train_step in range(1000000):
         policy_delayer.learn_step(learner.policy)
@@ -76,9 +79,10 @@ def run_loop(
 
             data_manager.receive_new_entries()
 
-        learn_idxs, learn_batch = data_manager.sample_data(batch_size)
+        learn_idxs, learn_weights, learn_batch = data_manager.sample_data(batch_size)
         if learn_batch is not None:
-            learner.learn_step(learn_idxs, learn_batch)
+            learner.learn_step(learn_idxs, learn_weights, learn_batch)
+            learn_steps += 1
 
             density_result = priority_updater.fetch_densities()
             if density_result is not None:
@@ -89,4 +93,8 @@ def run_loop(
         if time.time()/log_frequency > prev_time:
             logger.dump()
             saver.checkpoint(learner.policy)
+            log_callback(learner)
             prev_time += 1
+
+        if learn_steps >= max_learn_steps:
+            break

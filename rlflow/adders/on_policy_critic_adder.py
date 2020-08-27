@@ -1,13 +1,14 @@
 import numpy as np
+import gym
 from rlflow.utils.space_wrapper import SpaceWrapper
 
 class OnPolicyAdder:
-    def __init__(self, observation_space, action_space):
-        self.last_observation = None
+    def __init__(self, num_steps, observation_space, action_space):
         self.on_generate = None
         self.observation_space = SpaceWrapper(observation_space)
         self.action_space = SpaceWrapper(action_space)
-        self.last_value = None
+        self.data_list = []
+        self.num_steps = num_steps
 
     def get_example_output(self):
         return (
@@ -25,11 +26,12 @@ class OnPolicyAdder:
 
     def add(self, obs, action, rew, done, info):
         assert self.on_generate is not None, "need to call set_generate_callback before add"
+        if isinstance(self.action_space, gym.spaces.Box):
+            action = np.clip(action, self.action_space.low, self.action_space.high)
 
-        if self.last_observation is None:
-            self.last_observation = obs
-        else:
-            cur_obs = np.zeros_like(obs) if done else obs
-            transition = (cur_obs, action, rew, done, self.last_observation)
+        self.data_list.append(np.array(obs), action, rew, done, info)
+
+        if len(self.data_list) > self.num_steps:
+
             self.on_generate(transition)
-            self.last_observation = obs
+            self.data_list = []

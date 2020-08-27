@@ -68,9 +68,9 @@ class FifoScheme(BaseScheme):
             vals = [self.queue.pop() for i in range(batch_size)]
             for val in vals:
                 del self.nodes[val]
-            return vals
+            return vals, None
         else:
-            return None
+            return None, None
     def remove(self, id):
         if id in self.nodes:
             self.queue.remove(self.nodes[id])
