@@ -57,7 +57,7 @@ class ProcConcatVec:
         act_space_wrap = SpaceWrapper(self.action_space)
         self.shared_act = SharedArray((num_envs,)+act_space_wrap.shape, dtype=act_space_wrap.dtype)
         self.shared_rews = SharedArray((num_envs,), dtype=np.float32)
-        self.shared_dones = SharedArray((num_envs,), dtype=np.bool)
+        self.shared_dones = SharedArray((num_envs,), dtype=np.uint8)
 
         pipes = []
         procs = []

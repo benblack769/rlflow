@@ -28,8 +28,8 @@ class VectorAECWrapper:
 
     def _collect_dicts(self):
         self.rewards = {agent: np.array([env.rewards[agent] for env in self.envs],dtype=np.float32) for agent in self.agents}
-        self.dones = {agent: np.array([env.dones[agent] for env in self.envs],dtype=np.bool) for agent in self.agents}
-        env_dones = np.array([all(env.dones.values()) for env in self.envs],dtype=np.bool)
+        self.dones = {agent: np.array([env.dones[agent] for env in self.envs],dtype=np.uint8) for agent in self.agents}
+        env_dones = np.array([all(env.dones.values()) for env in self.envs],dtype=np.uint8)
         self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}
         return env_dones
 
@@ -45,7 +45,7 @@ class VectorAECWrapper:
         self.agent_selection = self._find_active_agent()
 
         env_dones = self._collect_dicts()
-        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.bool)
+        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
 
         return (np.stack(observations) if observe else None),passes
 
@@ -85,6 +85,6 @@ class VectorAECWrapper:
             if observations[i] is None or self.agent_selection != env.agent_selection:
                 observations[i] = env.observe(self.agent_selection)
 
-        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.bool)
+        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
 
         return (np.stack(observations) if observe else None),passes,env_dones

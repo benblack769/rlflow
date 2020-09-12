@@ -23,6 +23,6 @@ class SingleVecEnv:
             observations = self.gym_env.reset()
         observations =  np.expand_dims(observations,0)
         rewards = np.array([reward], dtype=np.float32)
-        dones = np.array([done], dtype=np.bool)
+        dones = np.array([done], dtype=np.uint8)
         infos = [info]
         return observations, rewards, dones,infos

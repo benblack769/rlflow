@@ -9,6 +9,7 @@ import time
 from rlflow.utils.shared_mem_pipe import SharedMemPipe, expand_example
 from rlflow.adders.logger_adder import LoggerAdder
 from rlflow.selectors.priority_updater import priority_pipe_example, PriorityUpdater, NoUpdater
+from rlflow.vector import MakeCPUAsyncConstructor
 
 def run_batch_generator(term_event, transition_example, removal_scheme, sample_scheme, max_entries, batch_store, new_entries_pipes, priority_updater, batch_size, logger):
     data_manager = DataManager(new_entries_pipes, transition_example, removal_scheme, sample_scheme, max_entries)
@@ -47,10 +48,10 @@ def run_worker_except(term_event, *args):
         term_event.set()
         traceback.print_exc()
 
-def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_env_fn, env_fn, logger_pipe, data_store_size):
+def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_pipes, num_cpus, num_env_ids, policy_delayer, env_fn, logger_pipe, data_store_size):
     example_env = env_fn()
 
-    vec_env = vec_env_fn([env_fn]*n_envs, example_env.observation_space, example_env.action_space)
+    vec_env = MakeCPUAsyncConstructor(num_cpus)([env_fn]*num_env_ids, example_env.observation_space, example_env.action_space)
     del example_env
     num_envs = vec_env.num_envs
 
@@ -68,7 +69,7 @@ def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_
     for log_adder in log_adders:
         log_adder.set_generate_callback(logger_pipe.put)
 
-    dones = np.zeros(num_envs,dtype=np.bool)
+    dones = np.zeros(num_envs,dtype=np.uint8)
     infos = [{} for _ in range(num_envs)]
     obss = vec_env.reset()
 
@@ -102,17 +103,17 @@ def run_loop(
         actor_fn,
         environment_fn,
         saver,
-        vec_environment_fn,
         adder_fn,
         replay_sampler,
         data_store_size,
         batch_size,
         priority_updater=NoUpdater(),
-        n_envs=4,
+        num_env_ids=4,
         log_frequency=100,
         act_steps_until_learn=None,
         max_learn_steps=2**100,
         log_callback=noop,
+        num_cpus=0,
         ):
 
     terminate_event = mp.Event()
@@ -122,7 +123,7 @@ def run_loop(
     example_env = environment_fn()
     envs_per_env = getattr(example_env, "num_envs", 1)
     del example_env
-    num_envs = n_envs*envs_per_env
+    num_envs = num_env_ids*envs_per_env
 
     transition_example = example_adder.get_example_output()
     removal_scheme = FifoScheme()
@@ -138,7 +139,7 @@ def run_loop(
     logger_adder_fn = LoggerAdder
 
     batch_proc = mp.Process(target=run_worker_except,args=(terminate_event, transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, env_log_queue))
-    actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, n_envs, policy_delayer, vec_environment_fn, environment_fn, env_log_queue, data_store_size))
+    actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, num_cpus, num_env_ids, policy_delayer, environment_fn, env_log_queue, data_store_size))
     procs = [batch_proc, actor_proc]
 
     for proc in procs:

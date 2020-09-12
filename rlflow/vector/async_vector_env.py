@@ -49,12 +49,12 @@ class AgentSharedData:
         self.obs = SharedData(obs_array, num_envs, obs_space.shape, obs_space.dtype)
         self.act = SharedData(act_array, num_envs, act_space.shape, act_space.dtype)
         self.rewards = SharedData(rew_array, num_envs, (), np.float32)
-        self.dones = SharedData(done_array, num_envs, (), np.bool)
+        self.dones = SharedData(done_array, num_envs, (), np.uint8)
 
 class EnvSharedData:
     def __init__(self, num_envs, data):
         env_dones,agent_idx_array = data
-        self.env_dones = SharedData(env_dones, num_envs, (), np.bool)
+        self.env_dones = SharedData(env_dones, num_envs, (), np.uint8)
         self.agent_sel_idx = SharedData(agent_idx_array, num_envs, (), np.uint32)
 
 
@@ -115,7 +115,7 @@ def init_parallel_env():
 def write_out_data(rewards, dones, num_envs, start_index, shared_data):
     for agent in shared_data:
         rews = np.asarray(rewards[agent],dtype=np.float32)
-        dns = np.asarray(dones[agent],dtype=np.bool)
+        dns = np.asarray(dones[agent],dtype=np.uint8)
         cur_data = shared_data[agent]
         cur_data.rewards.nparr[start_index:start_index+num_envs] = rews
         cur_data.dones.nparr[start_index:start_index+num_envs] = dns
@@ -166,7 +166,7 @@ def env_worker(env_constructors, total_num_envs, idx_start, my_num_envs, agent_a
                 do_observe = data
                 obs = env.reset(do_observe)
                 write_out_data(env.rewards,env.dones,my_num_envs,idx_start,shared_datas)
-                env_dones = np.zeros(my_num_envs,dtype=np.bool)
+                env_dones = np.zeros(my_num_envs,dtype=np.uint8)
                 write_env_data(env_dones,env.get_agent_indexes(),my_num_envs, idx_start, env_datas)
                 if do_observe:
                     # this observation gets overridden if the agent_selection is non-deterministic

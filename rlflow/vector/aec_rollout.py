@@ -20,7 +20,7 @@ class RolloutBuilder:
         assert self.prev_observes is not None, "must call restart()  before rollout()"
         num_envs = self.vec_env.num_envs
         rews = np.empty((n_steps,self.num_envs),dtype=np.float32)
-        dones = np.empty((n_steps,self.num_envs),dtype=np.bool)
+        dones = np.empty((n_steps,self.num_envs),dtype=np.uint8)
         infos = []
         for x in range(n_steps):
             actions,states = policy.rollout_step(self.prev_observes, self.prev_infos, self.states)
@@ -45,7 +45,7 @@ def transpose_rollout(obss, rews, dones, infos):
     obss = np.asarray(obss)
     obss = obss.transpose((1,0)+tuple(range(2,len(obss.shape))))
     rews = np.asarray(rews,dtype=np.float32).T
-    dones = np.asarray(dones,dtype=np.bool).T
+    dones = np.asarray(dones,dtype=np.uint8).T
     infos = [[infos[i][j] for i in range(len(infos))] for j in range(len(infos[0]))]
     return obss, rews, dones, infos
 

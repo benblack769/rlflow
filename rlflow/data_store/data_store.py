@@ -14,7 +14,7 @@ class DataManager:
 
         self.data = []
         for arr in transition_example:
-            assert np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool), "dtype of transition must be a number or bool, something wrong in adder or environment"
+            assert np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.uint8), "dtype of transition must be a number or bool, something wrong in adder or environment"
             data_entry = np.empty((self.max_entries,)+arr.shape,dtype=arr.dtype)
             self.data.append(data_entry)
 
