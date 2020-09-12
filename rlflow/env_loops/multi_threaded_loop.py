@@ -48,17 +48,20 @@ def run_worker_except(term_event, *args):
         term_event.set()
         traceback.print_exc()
 
-def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_pipes, num_cpus, num_env_ids, policy_delayer, env_fn, logger_pipe, data_store_size):
+def run_actor_loop(terminate_event, start_learn_event, actor_fn, adder_fn, log_adder_fn, new_entry_pipes, num_cpus, num_env_ids, policy_delayer, env_fn, logger_pipe, data_store_size, act_steps_until_learn):
     example_env = env_fn()
 
     vec_env = MakeCPUAsyncConstructor(num_cpus)([env_fn]*num_env_ids, example_env.observation_space, example_env.action_space)
     del example_env
     num_envs = vec_env.num_envs
 
-    act_steps_until_learn = data_store_size / num_envs
+    if act_steps_until_learn is None:
+        act_steps_until_learn = data_store_size / num_envs
 
     actor = actor_fn()
 
+    tot_time = 0
+    start_time = time.time()
     adders = [adder_fn() for _ in range(num_envs)]
     log_adders = [log_adder_fn() for _ in range(num_envs)]
 
@@ -80,10 +83,11 @@ def run_actor_loop(terminate_event, actor_fn, adder_fn, log_adder_fn, new_entry_
             break
         policy_delayer.actor_step(actor.policy)
 
-        if act_step < act_steps_until_learn:
+        if act_step * num_envs < act_steps_until_learn:
             actions = [vec_env.action_space.sample() for _ in range(num_envs)]
         else:
-            actions = actor.step(obss, dones, infos)
+            start_learn_event.set()
+            actions = actor.calc_action(obss)
 
         obss, rews, dones, infos = vec_env.step(actions)
 
@@ -117,6 +121,7 @@ def run_loop(
         ):
 
     terminate_event = mp.Event()
+    start_learn_event = mp.Event()
 
     example_adder = adder_fn()
 
@@ -139,8 +144,15 @@ def run_loop(
     logger_adder_fn = LoggerAdder
 
     batch_proc = mp.Process(target=run_worker_except,args=(terminate_event, transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, env_log_queue))
-    actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes, num_cpus, num_env_ids, policy_delayer, environment_fn, env_log_queue, data_store_size))
-    procs = [batch_proc, actor_proc]
+    procs = [batch_proc]
+    num_actors = 2
+    assert num_envs % num_env_ids == 0
+    envs_per_act = num_envs // num_actors
+    for aidx in range(num_actors):
+        sidx = aidx * envs_per_act
+        eidx = (aidx+1) * envs_per_act
+        actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, start_learn_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes[sidx:eidx], num_cpus//2, num_env_ids//2, policy_delayer, environment_fn, env_log_queue, data_store_size, act_steps_until_learn//2))
+        procs.append(actor_proc)
 
     for proc in procs:
         proc.start()
@@ -154,16 +166,24 @@ def run_loop(
         for train_step in range(2**100):
             if terminate_event.is_set():
                 break
-            policy_delayer.learn_step(learner.policy)
+            if start_learn_event.is_set():
+                policy_delayer.learn_step(learner.policy)
 
-            learn_batch = batch_store.get()
-            if learn_batch is None:
-                continue
+                learn_batch = batch_store.get()
+                if learn_batch is None:
+                    continue
 
-            ids = learn_batch[0]
-            weights = learn_batch[1]
-            transition_data = learn_batch[2:]
-            learner.learn_step(ids, transition_data, weights)
+                ids = learn_batch[0]
+                weights = learn_batch[1]
+                transition_data = learn_batch[2:]
+                learner.learn_step(ids, transition_data, weights)
+
+
+                if learn_steps >= max_learn_steps:
+                    break
+
+                cur_learn_steps += 1
+                learn_steps += 1
 
             while not env_log_queue.empty():
                 logger.record_type(*env_log_queue.get_nowait())
@@ -175,12 +195,6 @@ def run_loop(
                 saver.checkpoint(learner.policy)
                 prev_time += 1
                 log_callback(learner)
-
-            if learn_steps >= max_learn_steps:
-                break
-
-            cur_learn_steps += 1
-            learn_steps += 1
 
     finally:
         terminate_event.set()
