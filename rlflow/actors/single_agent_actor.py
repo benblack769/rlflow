@@ -5,7 +5,7 @@ class StatelessActor:
 
     def step(self, observations, dones, infos):
         # dones can be ignored here, taken care of in Adder
-        return self.policy.calc_action(observations)
+        return self.policy.calc_action(observations), infos
 
 
 class RecurrentActor:
@@ -20,4 +20,4 @@ class RecurrentActor:
             if dones[i]:
                 self.states[i] = self.policy.new_state()
         actions, self.states = self.policy.calc_action(observations)
-        return actions
+        return actions, infos

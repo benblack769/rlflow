@@ -87,14 +87,15 @@ def run_actor_loop(terminate_event, start_learn_event, actor_fn, adder_fn, log_a
             actions = [vec_env.action_space.sample() for _ in range(num_envs)]
         else:
             start_learn_event.set()
-            actions = actor.calc_action(obss)
+
+        actions, actor_info = actor.step(obss, dones, infos)
 
         obss, rews, dones, infos = vec_env.step(actions)
 
         for i in range(len(obss)):
-            obs,act,rew,done,info = obss[i], actions[i], rews[i], dones[i], infos[i]
-            adders[i].add(obs,act,rew,done,info)
-            log_adders[i].add(obs,act,rew,done,info)
+            obs,act,rew,done,info,act_info = obss[i], actions[i], rews[i], dones[i], infos[i], actor_info[i]
+            adders[i].add(obs,act,rew,done,info,act_info)
+            log_adders[i].add(obs,act,rew,done,info,act_info)
 
 
 def noop(x):
@@ -118,6 +119,7 @@ def run_loop(
         max_learn_steps=2**100,
         log_callback=noop,
         num_cpus=0,
+        num_actors=1,
         ):
 
     terminate_event = mp.Event()
@@ -145,13 +147,12 @@ def run_loop(
 
     batch_proc = mp.Process(target=run_worker_except,args=(terminate_event, transition_example, removal_scheme, sample_scheme, data_store_size, batch_store, new_entry_pipes, priority_updater, batch_size, env_log_queue))
     procs = [batch_proc]
-    num_actors = 2
     assert num_envs % num_env_ids == 0
     envs_per_act = num_envs // num_actors
     for aidx in range(num_actors):
         sidx = aidx * envs_per_act
         eidx = (aidx+1) * envs_per_act
-        actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, start_learn_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes[sidx:eidx], num_cpus//2, num_env_ids//2, policy_delayer, environment_fn, env_log_queue, data_store_size, act_steps_until_learn//2))
+        actor_proc = mp.Process(target=run_actor_except,args=(terminate_event, start_learn_event, actor_fn, adder_fn, logger_adder_fn, new_entry_pipes[sidx:eidx], num_cpus//num_actors, envs_per_act, policy_delayer, environment_fn, env_log_queue, data_store_size, act_steps_until_learn//num_actors))
         procs.append(actor_proc)
 
     for proc in procs:

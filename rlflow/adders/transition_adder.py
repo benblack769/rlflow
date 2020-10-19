@@ -21,7 +21,7 @@ class TransitionAdder:
         assert self.on_generate is None, "set_generate_callback should only be called once"
         self.on_generate = on_generate
 
-    def add(self, obs, action, rew, done, info):
+    def add(self, obs, action, rew, done, info, actor_info):
         assert self.on_generate is not None, "need to call set_generate_callback before add"
         obs = np.copy(obs)
         if self.last_observation is None:

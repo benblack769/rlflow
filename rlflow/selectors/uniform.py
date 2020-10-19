@@ -19,7 +19,7 @@ class UniformSampleScheme(BaseScheme):
             return None, None
         else:
             idxs = self.np_random.randint(0,self.num_idxs,size=batch_size)
-            return self.data_idxs[idxs], None
+            return self.data_idxs[idxs], np.ones(batch_size)
     def remove(self, id):
         idx = self.sample_idxs[id]
         new_idx = self.num_idxs-1

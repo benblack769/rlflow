@@ -64,7 +64,7 @@ def run_loop(
         act_steps_until_learn = data_store_size//2
 
     learner = learner_fn()
-    actor = StatelessActor(policy_fn())
+    actor = (policy_fn())
     prev_time = time.time()/log_frequency
 
     obss = vec_env.reset()
@@ -77,13 +77,12 @@ def run_loop(
 
         cur_act_steps = max(1,batch_size//num_envs)
         for i in range(cur_act_steps):
-            actions = actor.step(obss, dones, infos)
-
+            actions, actor_info = actor.step(obss, dones, infos)
             obss, rews, dones, infos = vec_env.step(actions)
             for i in range(len(obss)):
-                obs,act,rew,done,info = obss[i], actions[i], rews[i], dones[i], infos[i]
-                adders[i].add(obs,act,rew,done,info)
-                log_adders[i].add(obs,act,rew,done,info)
+                obs,act,rew,done,info,act_info = obss[i], actions[i], rews[i], dones[i], infos[i], actor_info[i]
+                adders[i].add(obs,act,rew,done,info,act_info)
+                log_adders[i].add(obs,act,rew,done,info,act_info)
 
             data_manager.receive_new_entries()
 
