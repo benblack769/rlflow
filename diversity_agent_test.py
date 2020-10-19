@@ -50,7 +50,7 @@ def main():
     data_store_size = 50000
     batch_size = 256
     num_actions = env.action_space.n
-    device="cuda"
+    device="cpu"
 
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()

@@ -43,6 +43,7 @@ class QValueLayer(nn.Module):
         self.action_layer = nn.Linear(model_features, num_targets*num_actions)
         self.num_targets = num_targets
         self.num_actions = num_actions
+        self.action_layer.weight.data *= 0.01
 
     def q_value(self, features, targets):
         input = torch.cat([features, targets], axis=1)
@@ -103,8 +104,6 @@ class DiversityPolicy(nn.Module):
         self.q_value_layers = QValueLayers(model_features, num_targets, num_actions).to(device)
 
     def calc_action(self, observation, target):
-        observation = observation.copy(order='F')
-        torch.tensor(np.zeros(32))
         observation = torch.tensor(observation,device=self.device)
         target = torch.tensor(target,device=self.device)
         features = self.policy_features(observation)
@@ -159,9 +158,9 @@ class DiversityLearner:
             future_q_values = self.policy.q_value_layers.q_value(future_features, targ_vec)
             future_prediction_rew = ~done.view(-1,1) * torch.max(future_q_values,dim=-1).values
             discounted_fut_rew = self.gamma * future_prediction_rew
-            print(discounted_fut_rew.shape)
+            # print(discounted_fut_rew.shape)
 
-        total_rew = prediction_reward + discounted_fut_rew
+        total_rew = prediction_reward.detach() + discounted_fut_rew
 
         policy_features = self.policy.policy_features(Otm1)
         tot_q_loss = 0
@@ -169,17 +168,20 @@ class DiversityLearner:
             qvals = q_layer.q_value(policy_features, targ_vec)
             indicies = old_action.view(batch_size,1,1).repeat(1, self.num_targets, 1)
             taken_qvals = qvals.gather(2,indicies).squeeze()#[torch.arange((batch_size),dtype=torch.int64, device=self.device), old_action.view(1,-1).repeat(self.num_targets, 1)]
-            # print(taken_qvals.shape)
-
-            q_loss = torch.mean((taken_qvals - total_rew)**2)
+            # print(total_rew.max(0))
+            q_loss = torch.mean((taken_qvals - total_rew)**2) #+ 0.1*(taken_qvals**2).sum()
             tot_q_loss = q_loss + tot_q_loss
 
+        tot_p_loss = -prediction_reward.sum()
         self.policy.zero_grad()
         self.predictor.zero_grad()
         tot_q_loss.backward()
+        tot_p_loss.backward()
         self.optimizer.step()
-        final_loss = tot_q_loss.cpu().detach().numpy()
-        self.logger.record_mean("loss", final_loss)
+        final_q_loss = tot_q_loss.cpu().detach().numpy()
+        final_p_loss = tot_p_loss.cpu().detach().numpy()
+        self.logger.record_mean("final_q_loss", final_q_loss)
+        self.logger.record_mean("final_p_loss", final_p_loss)
         self.logger.record_sum("learner_steps", batch_size)
 
         # self.priority_updater.update_td_error(idxs, abs_td_loss.cpu().detach().numpy())
