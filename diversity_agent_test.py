@@ -11,8 +11,8 @@ import multiprocessing as mp
 from torch.nn import functional as F
 from diversity_agent import TargetTransitionAdder, DiversityLearner, TargetUpdaterActor, DiversityPolicy
 
-# from rlflow.env_loops.single_threaded_env_loop import run_loop
-from rlflow.env_loops.multi_threaded_loop import run_loop
+from rlflow.env_loops.single_threaded_env_loop import run_loop
+# from rlflow.env_loops.multi_threaded_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -46,13 +46,15 @@ def main():
     cpu_count = mp.cpu_count()
     # cpu_count = 0
     num_envs = 8
-    num_cpus = 8
-    num_targets = 31
+    num_cpus = 4
+    num_targets = 1
     model_features = 512
     data_store_size = 100000
     batch_size = 512
+    max_grad_norm = 0.1
     num_actions = env.action_space.n
     device="cuda"
+    num_actors = 1
 
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()
@@ -70,9 +72,9 @@ def main():
     logger = make_logger("log")
     run_loop(
         logger,
-        lambda: DiversityLearner(lr=0.0001, gamma=0.99, obs_preproc=obs_preproc, model_fn=model_fn, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
-        OccasionalUpdate(100, lambda: policy_fn_dev("cpu")),
-        lambda: TargetUpdaterActor(policy_fn(), num_envs, num_targets, target_staggering=None),
+        lambda: DiversityLearner(lr=0.0001, gamma=0.9, max_grad_norm=max_grad_norm, obs_preproc=obs_preproc, model_fn=model_fn, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
+        OccasionalUpdate(200, lambda: policy_fn_dev("cpu")),
+        lambda: TargetUpdaterActor(policy_fn(), num_envs//num_actors, num_targets, target_staggering=1.314),
         env_fn,
         Saver(save_folder),
         # MakeCPUAsyncConstructor(n_cpus),
@@ -85,7 +87,8 @@ def main():
         priority_updater=priority_updater,
         log_frequency=5,
         max_learn_steps=10000000,
-        act_steps_until_learn=10000,
+        act_steps_until_learn=100000,
+        # num_actors=num_actors,
     )
 if __name__=="__main__":
     main()
