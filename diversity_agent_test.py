@@ -11,8 +11,8 @@ import multiprocessing as mp
 from torch.nn import functional as F
 from diversity_agent import TargetTransitionAdder, DiversityLearner, TargetUpdaterActor, DiversityPolicy
 
-from rlflow.env_loops.single_threaded_env_loop import run_loop
-# from rlflow.env_loops.multi_threaded_loop import run_loop
+# from rlflow.env_loops.single_threaded_env_loop import run_loop
+from rlflow.env_loops.multi_threaded_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -34,23 +34,25 @@ def env_fn():
     env = AtariWrapper(gym.make("SpaceInvadersNoFrameskip-v4"),clip_reward=False)
     env = supersuit.frame_stack_v1(env, 4)
     env = supersuit.observation_lambda_v0(env,lambda obs: np.transpose(obs, axes=(2,0,1)))
-    env = supersuit.dtype_v0(env,np.float32)
-    env = supersuit.normalize_obs_v0(env)
+    # env = supersuit.dtype_v0(env,np.float32)
+    # env = supersuit.normalize_obs_v0(env)
     return env
 
+def obs_preproc(obs):
+    return obs.float()/255.
 
 def main():
     env = env_fn()
     cpu_count = mp.cpu_count()
     # cpu_count = 0
     num_envs = 8
-    num_cpus = 0
+    num_cpus = 8
     num_targets = 31
     model_features = 512
-    data_store_size = 50000
-    batch_size = 256
+    data_store_size = 100000
+    batch_size = 512
     num_actions = env.action_space.n
-    device="cpu"
+    device="cuda"
 
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()
@@ -59,7 +61,7 @@ def main():
 
     save_folder = "savedata/"
     def policy_fn_dev(device):
-        policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, device)
+        policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, obs_preproc, device)
         load_latest(save_folder, policy)
         return policy
 
@@ -68,8 +70,8 @@ def main():
     logger = make_logger("log")
     run_loop(
         logger,
-        lambda: DiversityLearner(lr=0.001, gamma=0.99, model_fn=model_fn, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
-        OccasionalUpdate(1000, lambda: policy_fn_dev("cpu")),
+        lambda: DiversityLearner(lr=0.0001, gamma=0.99, obs_preproc=obs_preproc, model_fn=model_fn, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
+        OccasionalUpdate(100, lambda: policy_fn_dev("cpu")),
         lambda: TargetUpdaterActor(policy_fn(), num_envs, num_targets, target_staggering=None),
         env_fn,
         Saver(save_folder),
@@ -82,8 +84,8 @@ def main():
         num_env_ids=num_envs,
         priority_updater=priority_updater,
         log_frequency=5,
-        max_learn_steps=1000,
-        act_steps_until_learn=1000,
+        max_learn_steps=10000000,
+        act_steps_until_learn=10000,
     )
 if __name__=="__main__":
     main()

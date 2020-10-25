@@ -41,22 +41,27 @@ class QValueLayer(nn.Module):
         super().__init__()
         self.comb_layer = nn.Linear(model_features+num_targets, model_features)
         self.action_layer = nn.Linear(model_features, num_targets*num_actions)
+        self.mean_layer = nn.Linear(model_features, num_targets)
         self.num_targets = num_targets
         self.num_actions = num_actions
         self.action_layer.weight.data *= 0.01
+        self.mean_layer.weight.data *= 0.01
 
     def q_value(self, features, targets):
         input = torch.cat([features, targets], axis=1)
         comb = self.comb_layer(input)
         comb = torch.relu(comb)
-        logits = self.action_layer(comb)
-        logits = logits.view(-1, self.num_targets, self.num_actions)
-        return logits
+        advantages = self.action_layer(comb)
+        means = self.mean_layer(comb).unsqueeze(2)
+        advantages = advantages.view(-1, self.num_targets, self.num_actions)
+        return means + advantages
 
 class QValueLayers(nn.Module):
-    def __init__(self, model_features, num_targets, num_actions, num_duplicates = 2):
+    def __init__(self, model_features, num_targets, num_actions, num_duplicates = 5):
         super().__init__()
-        self.values = [QValueLayer(model_features, num_targets, num_actions) for i in range(num_duplicates)]
+        self.values = nn.ModuleList([QValueLayer(model_features, num_targets, num_actions) for i in range(num_duplicates)])
+        # self.value0 = self.values[0]
+        # self.value1 = self.values[1]
 
     def q_value(self, features, targets):
         values = [value_fn.q_value(features, targets) for value_fn in self.values]
@@ -95,8 +100,9 @@ class TargetUpdaterActor:
         return actions, self.targets
 
 class DiversityPolicy(nn.Module):
-    def __init__(self, model_fn, model_features, num_actions, num_targets, device):
+    def __init__(self, model_fn, model_features, num_actions, num_targets, obs_preproc, device):
         super().__init__()
+        self.obs_preproc = obs_preproc
         self.policy_features = model_fn().to(device)
         self.model_features = model_features
         self.device = device
@@ -104,7 +110,7 @@ class DiversityPolicy(nn.Module):
         self.q_value_layers = QValueLayers(model_features, num_targets, num_actions).to(device)
 
     def calc_action(self, observation, target):
-        observation = torch.tensor(observation,device=self.device)
+        observation = self.obs_preproc(torch.tensor(observation,device=self.device))
         target = torch.tensor(target,device=self.device)
         features = self.policy_features(observation)
         q_values = self.q_value_layers.values[0].q_value(features, target)
@@ -128,39 +134,43 @@ class Predictor(nn.Module):
         return torch.tanh(self.pred_layer(self.feature_extractor(observation)))
 
 class DiversityLearner:
-    def __init__(self, lr, gamma, model_fn, model_features, logger, device, num_targets, num_actions):
-        self.policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, device)
+    def __init__(self, lr, gamma, model_fn, model_features, logger, device, num_targets, num_actions, obs_preproc, target_policy_delay=0.999):
+        self.policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, obs_preproc, device)
+        self.target_policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, obs_preproc, device)
         self.predictor = Predictor(model_fn, model_features, num_targets).to(device)
         self.gamma = gamma
         self.logger = logger
+        self.target_policy_delay = target_policy_delay
         self.device = device
         self.num_steps = 0
         self.num_targets = num_targets
         self.num_actions = num_actions
-        self.optimizer = torch.optim.RMSprop(list(self.policy.parameters()) + list(self.predictor.parameters()), lr=lr)
+        self.optimizer = torch.optim.Adam(list(self.policy.parameters()) + list(self.predictor.parameters()), lr=lr)
         self.distribution = torch.distributions.categorical.Categorical
+        self.obs_preproc = obs_preproc
 
     def learn_step(self, idxs, transition_batch, weights):
         Otm1, targ_vec, old_action, env_rew, done, Ot = transition_batch
         batch_size = len(Ot)
-        Otm1 = torch.tensor(Otm1, device=self.device)
+        Otm1 = self.obs_preproc(torch.tensor(Otm1, device=self.device))
         targ_vec = torch.tensor(targ_vec, device=self.device)
         old_action = torch.tensor(old_action, device=self.device)
         env_rew = torch.tensor(env_rew, device=self.device)
         done = torch.tensor(done, device=self.device)
-        Ot = torch.tensor(Ot, device=self.device)
+        Ot = self.obs_preproc(torch.tensor(Ot, device=self.device))
         weights = torch.tensor(weights, device=self.device)
 
         prediction_reward = self.predictor(Ot) * targ_vec
 
         with torch.no_grad():
-            future_features = self.policy.policy_features(Ot)
-            future_q_values = self.policy.q_value_layers.q_value(future_features, targ_vec)
+            future_features = self.target_policy.policy_features(Ot)
+            future_q_values = self.target_policy.q_value_layers.q_value(future_features, targ_vec)
             future_prediction_rew = ~done.view(-1,1) * torch.max(future_q_values,dim=-1).values
             discounted_fut_rew = self.gamma * future_prediction_rew
             # print(discounted_fut_rew.shape)
 
-        total_rew = prediction_reward.detach() + discounted_fut_rew
+        total_rew = prediction_reward + discounted_fut_rew
+
 
         policy_features = self.policy.policy_features(Otm1)
         tot_q_loss = 0
@@ -169,10 +179,10 @@ class DiversityLearner:
             indicies = old_action.view(batch_size,1,1).repeat(1, self.num_targets, 1)
             taken_qvals = qvals.gather(2,indicies).squeeze()#[torch.arange((batch_size),dtype=torch.int64, device=self.device), old_action.view(1,-1).repeat(self.num_targets, 1)]
             # print(total_rew.max(0))
-            q_loss = torch.mean((taken_qvals - total_rew)**2) #+ 0.1*(taken_qvals**2).sum()
+            q_loss = torch.mean((taken_qvals - total_rew.detach())**2) #+ 0.1*(taken_qvals**2).sum()
             tot_q_loss = q_loss + tot_q_loss
 
-        tot_p_loss = -prediction_reward.sum()
+        tot_p_loss = -prediction_reward.mean()
         self.policy.zero_grad()
         self.predictor.zero_grad()
         tot_q_loss.backward()
@@ -180,10 +190,15 @@ class DiversityLearner:
         self.optimizer.step()
         final_q_loss = tot_q_loss.cpu().detach().numpy()
         final_p_loss = tot_p_loss.cpu().detach().numpy()
+        # self.logger.record_mean("prediction_reward", prediction_reward.mean().item())
         self.logger.record_mean("final_q_loss", final_q_loss)
         self.logger.record_mean("final_p_loss", final_p_loss)
         self.logger.record_sum("learner_steps", batch_size)
 
+        main_params = dict(self.policy.named_parameters())
+        target_params = dict(self.target_policy.named_parameters())
+        for n in main_params:
+            target_params[n].data = self.target_policy_delay*target_params[n] + (1-self.target_policy_delay)*main_params[n]
         # self.priority_updater.update_td_error(idxs, abs_td_loss.cpu().detach().numpy())
 
         # self.logger.record_mean("actor_loss", actor_loss.detach().cpu().numpy())
