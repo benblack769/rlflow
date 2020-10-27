@@ -55,6 +55,7 @@ def main():
     num_actions = env.action_space.n
     device="cuda"
     num_actors = 1
+    max_learn_steps = 100000
 
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()
@@ -72,7 +73,7 @@ def main():
     logger = make_logger("log")
     run_loop(
         logger,
-        lambda: DiversityLearner(lr=0.0001, gamma=0.99, max_grad_norm=max_grad_norm, obs_preproc=obs_preproc, model_fn=model_fn, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
+        lambda: DiversityLearner(discount_factor=0.99, obs_preproc=obs_preproc, model_fn=model_fn, max_learn_steps=max_learn_steps, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
         OccasionalUpdate(200, lambda: policy_fn_dev("cpu")),
         lambda: TargetUpdaterActor(policy_fn(), num_envs//num_actors, num_targets, target_staggering=1.314),
         env_fn,
@@ -86,8 +87,8 @@ def main():
         num_env_ids=num_envs,
         priority_updater=priority_updater,
         log_frequency=5,
-        max_learn_steps=10000000,
-        act_steps_until_learn=10000,
+        max_learn_steps=max_learn_steps,
+        act_steps_until_learn=1000,
         # num_actors=num_actors,
     )
 if __name__=="__main__":
