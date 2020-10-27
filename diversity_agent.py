@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import torch
+import copy
 from torch import nn
 from rlflow.utils.space_wrapper import SpaceWrapper
 
@@ -36,6 +37,20 @@ class TargetTransitionAdder:
             self.on_generate(transition)
             self.last_observation = None if done else obs
 
+class ValueNet(nn.Module):
+    def __init__(self, model_features, num_targets, num_actions):
+        super().__init__()
+        self.comb_layer1 = nn.Linear(model_features+num_targets, model_features, bias=False)
+        self.mean_layer = nn.Linear(model_features, num_targets, bias=False)
+        self.num_targets = num_targets
+        self.num_actions = num_actions
+
+    def q_value(self, features, targets):
+        input = torch.cat([features, targets], axis=1)
+        comb1 = torch.relu(self.comb_layer1(input))
+        means = self.mean_layer(comb2).unsqueeze(2)
+        return means
+
 class QValueLayer(nn.Module):
     def __init__(self, model_features, num_targets, num_actions):
         super().__init__()
@@ -45,8 +60,8 @@ class QValueLayer(nn.Module):
         self.mean_layer = nn.Linear(model_features, num_targets, bias=False)
         self.num_targets = num_targets
         self.num_actions = num_actions
-        self.action_layer.weight.data *= 0.1
-        self.mean_layer.weight.data *= 0.1
+        # self.action_layer.weight.data *= 0.1
+        # self.mean_layer.weight.data *= 0.1
 
     def q_value(self, features, targets):
         input = torch.cat([features, targets], axis=1)
@@ -58,9 +73,22 @@ class QValueLayer(nn.Module):
         advantages -= advantages.mean(axis=-1).view(-1,self.num_targets,1)
         return means + advantages
 
+class PolicyLayer(nn.Module):
+    def __init__(self, model_features, num_targets, num_actions):
+        super().__init__()
+        self.comb_layer1 = nn.Linear(model_features+num_targets, model_features, bias=False)
+        self.action_layer = nn.Linear(model_features, num_actions, bias=False)
+        self.num_targets = num_targets
+        self.num_actions = num_actions
+
+    def forward(self, features, targets):
+        input = torch.cat([features, targets], axis=1)
+        comb1 = torch.relu(self.comb_layer1(input))
+        action_logits = self.action_layer(comb1)
+        return action_logits
 
 class QValueLayers(nn.Module):
-    def __init__(self, model_features, num_targets, num_actions, num_duplicates = 5):
+    def __init__(self, model_features, num_targets, num_actions, num_duplicates = 2):
         super().__init__()
         self.values = nn.ModuleList([QValueLayer(model_features, num_targets, num_actions) for i in range(num_duplicates)])
         # self.value0 = self.values[0]
@@ -111,23 +139,29 @@ class DiversityPolicy(nn.Module):
         self.device = device
         self.num_targets = num_targets
         self.num_actions = num_actions
-        self.q_value_layers = QValueLayers(model_features, num_targets, num_actions).to(device)
+        self.policy_layer = PolicyLayer(model_features, num_targets, num_actions).to(device)
+        self.distribution = torch.distributions.categorical.Categorical
         self.steps = 0
 
     def calc_action(self, observation, target):
-        batch_size = len(observation)
         observation = self.obs_preproc(torch.tensor(observation,device=self.device))
-        target = torch.tensor(target,device=self.device)
         features = self.policy_features(observation)
-        q_values = self.q_value_layers.values[0].q_value(features, target)
-        greedy = torch.argmax(torch.mean(q_values,axis=1),axis=-1)
-        rand_vals = torch.randint(self.num_actions,size=(batch_size,),device=self.device)
-        epsilon = 1.0 if self.steps < 100000 else 1-(self.steps - 1000) / 1000 + 0.02
-        pick_rand = torch.rand((batch_size,),device=self.device) < epsilon
-        actions = torch.where(pick_rand, rand_vals, greedy)
-        # print(actions, greedy)
-        self.steps += 1
+        target = torch.tensor(target,device=self.device)
+        action_dist = self.policy_layer(features, target)
+        dist = self.distribution(logits=action_dist)
+        actions = dist.sample()
         return actions.detach().cpu().numpy()
+        # batch_size = len(observation)
+        # target = torch.tensor(target,device=self.device)
+        # q_values = self.q_value_layers.values[0].q_value(features, target)
+        # greedy = torch.argmax(torch.mean(q_values,axis=1),axis=-1)
+        # rand_vals = torch.randint(self.num_actions,size=(batch_size,),device=self.device)
+        # epsilon = 1.0 if self.steps < 100000 else 1-(self.steps - 1000) / 1000 + 0.02
+        # pick_rand = torch.rand((batch_size,),device=self.device) < epsilon
+        # actions = torch.where(pick_rand, rand_vals, greedy)
+        # # print(actions, greedy)
+        # self.steps += 1
+        # return actions.detach().cpu().numpy()
 
     def get_params(self):
         return [param.cpu().detach().numpy() for param in self.parameters()]
@@ -145,14 +179,18 @@ class Predictor(nn.Module):
     def forward(self, observation):
         return torch.relu(self.pred_layer(self.feature_extractor(observation)))
 
+def first(x):
+    return next(iter(x))
+
+
 class DiversityLearner:
     def __init__(self, lr, gamma, model_fn, model_features, max_grad_norm, logger, device, num_targets, num_actions, obs_preproc, target_policy_delay=0.999):
+        self.policy_features = model_fn()
         self.policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, obs_preproc, device)
-        self.target_policy = DiversityPolicy(model_fn, model_features, num_actions, num_targets, obs_preproc, device)
-        main_params = dict(self.policy.named_parameters())
-        target_params = dict(self.target_policy.named_parameters())
-        for n in main_params:
-            target_params[n].data = main_params[n]
+        self.value_layer = ValueNet(model_features, num_targets, num_actions).to(device)
+        self.q_value_layers = QValueLayers(model_features, num_targets, num_actions).to(device)
+        self.target_value_layer = copy.deepcopy(self.value_layer)
+        assert np.equal(first(self.value_layer.parameters()).detach().cpu().numpy(),first(self.target_value_layer.parameters()).detach().cpu().numpy()).all()
 
         self.predictor = Predictor(model_fn, model_features, num_targets).to(device)
         self.gamma = gamma
