@@ -29,6 +29,21 @@ from pettingzoo.sisl import waterworld_v0
 from rlflow.vector import ConcatVecEnv, aec_to_markov, MarkovVectorEnv, SingleVecEnv, SpaceWrap
 from rlflow.utils.saver import Saver, load_latest
 import supersuit
+from torch import nn
+
+class FlatModel(nn.Module):
+    def __init__(self, input_size):
+        super().__init__()
+        # print(input_size)
+        self.l1 = nn.Linear(input_size, 400)
+        self.l2 = nn.Linear(400, 512)
+
+    def forward(self, input):
+        v = input
+        # print(input.shape)
+        v = torch.relu(self.l1(v))
+        v = (self.l2(v))
+        return v
 
 def env_fn():
     env = AtariWrapper(gym.make("SpaceInvadersNoFrameskip-v4"),clip_reward=False)
@@ -38,8 +53,14 @@ def env_fn():
     # env = supersuit.normalize_obs_v0(env)
     return env
 
+def env_fn():
+    return gym.make("CartPole-v1")
+
 def obs_preproc(obs):
     return obs.float()/255.
+
+def obs_preproc(obs):
+    return obs
 
 def main():
     env = env_fn()
@@ -49,7 +70,7 @@ def main():
     num_cpus = 4
     num_targets = 1
     model_features = 512
-    data_store_size = 100000
+    data_store_size = 500000
     batch_size = 512
     max_grad_norm = 0.1
     num_actions = env.action_space.n
@@ -60,7 +81,7 @@ def main():
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()
     def model_fn():
-        return AtariModel()
+        return FlatModel(env.observation_space.shape[0])
 
     save_folder = "savedata/"
     def policy_fn_dev(device):
@@ -74,7 +95,7 @@ def main():
     run_loop(
         logger,
         lambda: DiversityLearner(discount_factor=0.99, obs_preproc=obs_preproc, model_fn=model_fn, max_learn_steps=max_learn_steps, model_features=model_features, logger=logger, device=device, num_targets=num_targets, num_actions=num_actions),
-        OccasionalUpdate(200, lambda: policy_fn_dev("cpu")),
+        OccasionalUpdate(10, lambda: policy_fn_dev("cpu")),
         lambda: TargetUpdaterActor(policy_fn(), num_envs//num_actors, num_targets, target_staggering=1.314),
         env_fn,
         Saver(save_folder),
@@ -88,7 +109,7 @@ def main():
         priority_updater=priority_updater,
         log_frequency=5,
         max_learn_steps=max_learn_steps,
-        act_steps_until_learn=1000,
+        act_steps_until_learn=10000,
         # num_actors=num_actors,
     )
 if __name__=="__main__":

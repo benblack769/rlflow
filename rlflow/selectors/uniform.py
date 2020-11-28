@@ -28,3 +28,15 @@ class UniformSampleScheme(BaseScheme):
             self.data_idxs[idx] = new_id
             self.sample_idxs[new_id] = idx
         self.num_idxs = new_idx
+
+def test():
+    scheme = UniformSampleScheme(4)
+    print(scheme.add(1))
+    print(scheme.add(2))
+    print(scheme.add(3))
+    print(scheme.add(0))
+    print(scheme.remove(2))
+    print(scheme.add(1))
+    print([int(scheme.sample(1)[0]) for i in range(10)])
+if __name__ == "__main__":
+    test()

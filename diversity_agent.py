@@ -36,7 +36,7 @@ class TargetTransitionAdder:
         else:
             transition = (obs, targ_vec, action, rew, done, self.last_observation)
             self.on_generate(transition)
-            self.last_observation = None if done else obs
+            self.last_observation = np.zeros_like(obs) if done else obs
 
 class ValueNet(nn.Module):
     def __init__(self, model_features, num_targets, num_actions):
@@ -209,10 +209,10 @@ class DuelingQValueLayer(nn.Module):
         comb1 = torch.relu(self.comb_layer1(input))
         comb2 = torch.relu(self.comb_layer2(input))
         advantages = self.action_layer(comb1)
-        means = self.mean_layer(comb2).unsqueeze(2)
+        # means = self.mean_layer(comb2).unsqueeze(2)
         advantages = advantages.view(-1, self.output_size, self.num_actions)
-        advantages -= advantages.mean(axis=-1).view(-1,self.output_size,1)
-        qvals = means + advantages
+        # advantages -= advantages.mean(axis=-1).view(-1,self.output_size,1)
+        qvals = advantages#means + advantages
         indicies = actions.view(batch_size,1,1).repeat(1, self.output_size, 1)
         taken_qvals = qvals.gather(2,indicies).squeeze()#[torch.arange((batch_size),dtype=torch.int64, device=self.device), old_action.view(1,-1).repeat(self.num_targets, 1)]
         return taken_qvals.unsqueeze(1)
@@ -332,7 +332,7 @@ class DiversityLearner:
                 final_anneal_step
             ),
             writer=writer,
-            name='q_1'
+            name=f'q_{i}'
         ) for i in range(2)]
 
         self.v = VNetwork(
@@ -357,13 +357,14 @@ class DiversityLearner:
         done = torch.tensor(done, device=self.device).float().to(self.device)
         next_obs = self.obs_preproc(torch.tensor(Ot, device=self.device))
         weights = torch.tensor(weights, device=self.device)
+        # assert (not (Otm1 == Ot).all())
         # print(self.device)
         states = StateArray({
             'observation': obsm1,
             'reward': rewards,
             'done': done,
         }, shape=(batch_size,))
-        # print("printed")
+        # print(states['mask'])
         next_states = StateArray({
             'observation': obsm1,
             'reward': torch.zeros(batch_size,device=self.device),
@@ -384,8 +385,11 @@ class DiversityLearner:
             self.qs[0].target(value_feature1, _actions),
             self.qs[1].target(value_feature1, _actions),
         ) - self.temperature * _log_probs
-
         # update Q and V-functions
+        # print(q_targets.min(),torch.min(
+        #     self.qs[0].target(value_feature1, _actions),
+        #     self.qs[1].target(value_feature1, _actions),
+        # ))
         for i in range(2):
             self.qs[i].reinforce(mse_loss(self.qs[i](value_feature1, actions), q_targets))
         # print(self.v(value_feature1).shape)
