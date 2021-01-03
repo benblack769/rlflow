@@ -41,6 +41,18 @@ def env_fn():
 def obs_preproc(obs):
     return obs.float()/255.
 
+def env_fn():
+    env = gym.make("CartPole-v1")
+    return env
+
+def obs_preproc(obs):
+    return obs
+
+
+class BasicModel(torch.nn.Module):
+    def forward(self, obs):
+        return obs
+
 def main():
     env = env_fn()
     cpu_count = mp.cpu_count()
@@ -48,7 +60,7 @@ def main():
     num_envs = 8
     num_cpus = 4
     num_targets = 1
-    model_features = 512
+    model_features = env.observation_space.shape[0]
     data_store_size = 100000
     batch_size = 512
     max_grad_norm = 0.1
@@ -59,6 +71,7 @@ def main():
     # venv = MakeCPUAsyncConstructor(cpu_count)([env_fn]*num_envs, env.observation_space, env.action_space)
     # venv.reset()
     def model_fn():
+        return BasicModel()
         return AtariModel()
 
     save_folder = "savedata/"

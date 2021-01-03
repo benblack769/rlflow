@@ -14,11 +14,11 @@ class VectorAECWrapper:
         self.envs = [env_constructor() for env_constructor in env_constructors]
         self.num_envs = len(env_constructors)
         self.env = self.envs[0]
-        self.num_agents = self.env.num_agents
-        self.agents = self.env.agents
+        self.max_num_agents = self.env.max_num_agents
+        self.possible_agents = self.env.possible_agents
         self.observation_spaces = copy.copy(self.env.observation_spaces)
         self.action_spaces = copy.copy(self.env.action_spaces)
-        self._agent_selector = agent_selector(self.agents)
+        self._agent_selector = agent_selector(self.possible_agents)
 
     def _find_active_agent(self):
         cur_selection = self.agent_selection
@@ -27,64 +27,56 @@ class VectorAECWrapper:
         return cur_selection
 
     def _collect_dicts(self):
-        self.rewards = {agent: np.array([env.rewards[agent] for env in self.envs],dtype=np.float32) for agent in self.agents}
-        self.dones = {agent: np.array([env.dones[agent] for env in self.envs],dtype=np.uint8) for agent in self.agents}
-        env_dones = np.array([all(env.dones.values()) for env in self.envs],dtype=np.uint8)
-        self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}
+        self.rewards = {agent: np.array([env.rewards[agent] if agent in env.rewards else 0 for env in self.envs],dtype=np.float32) for agent in self.possible_agents}
+        self._cumulative_rewards = {agent: np.array([env._cumulative_rewards[agent] if agent in env._cumulative_rewards else 0 for env in self.envs],dtype=np.float32) for agent in self.possible_agents}
+        self.dones = {agent: np.array([env.dones[agent] if agent in env.dones else True for env in self.envs],dtype=np.uint8) for agent in self.possible_agents}
+        env_dones = np.array([not (env.agents) for env in self.envs],dtype=np.uint8)
+        self.infos = {agent: [env.infos[agent] if agent in env.infos else {} for env in self.envs] for agent in self.possible_agents}
         return env_dones
 
-    def reset(self, observe=True):
+    def reset(self):
         '''
         returns: list of observations
         '''
         observations = []
         for env in self.envs:
-            observations.append(env.reset(observe))
+            observations.append(env.reset())
 
         self.agent_selection = self._agent_selector.reset()
         self.agent_selection = self._find_active_agent()
 
         env_dones = self._collect_dicts()
-        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
-
-        return (np.stack(observations) if observe else None),passes
 
     def observe(self, agent):
         observations = []
         for env in self.envs:
-            observations.append(env.observe(agent))
+            obs = env.observe(agent) if agent in env.dones else np.zeros_like(self.observation_spaces[agent].low)
+            observations.append(obs)
         return np.stack(observations)
 
-    def last(self):
+    def last(self, observe=True):
+        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
+        envs_done = np.array([not (env.agents) for env in self.envs],dtype=np.uint8)
         last_agent = self.agent_selection
-        return self.rewards[last_agent], self.dones[last_agent], self.infos[last_agent]
+        obs = self.observe(last_agent) if observe else None
+        return obs, self._cumulative_rewards[last_agent], self.dones[last_agent], envs_done, passes, self.infos[last_agent]
 
     def step(self, actions, observe=True):
         assert len(actions) == len(self.envs)
         old_agent = self.agent_selection
 
-        observations = []
-        for act,env in zip(actions,self.envs):
-            observations.append(env.step(act,observe) if env.agent_selection == old_agent else None)
+        envs_done = []
+        for i, (act,env) in enumerate(zip(actions,self.envs)):
+            env_done = not env.agents
+            envs_done.append(env_done)
+            if env_done:
+                env.reset()
+            elif env.agent_selection == old_agent:
+                env.step(act if not self.dones[old_agent][i] else None)
+
 
         self.agent_selection = self._agent_selector.next()
         self.agent_selection = self._find_active_agent()
         new_agent = self.agent_selection
 
         env_dones = self._collect_dicts()
-
-        # self.rewards = {agent: [env.rewards[agent] for env in self.envs] for agent in self.agents}
-        # self.dones = {agent: [env.dones[agent] for env in self.envs] for agent in self.agents}
-        # self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}
-        # self._agent_selections = [env.agent_selection for env in self.envs]
-        # self.agent_selection = self._agent_selections[0]
-        #env_dones = [all(env.dones.values()) for env in self.envs]
-        for i,(env,done) in enumerate(zip(self.envs,env_dones)):
-            if done:
-                observations[i] = env.reset(observe)
-            if observations[i] is None or self.agent_selection != env.agent_selection:
-                observations[i] = env.observe(self.agent_selection)
-
-        passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
-
-        return (np.stack(observations) if observe else None),passes,env_dones
