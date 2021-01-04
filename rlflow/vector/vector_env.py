@@ -30,22 +30,24 @@ class VectorAECWrapper:
         self.rewards = {agent: np.array([env.rewards[agent] if agent in env.rewards else 0 for env in self.envs],dtype=np.float32) for agent in self.possible_agents}
         self._cumulative_rewards = {agent: np.array([env._cumulative_rewards[agent] if agent in env._cumulative_rewards else 0 for env in self.envs],dtype=np.float32) for agent in self.possible_agents}
         self.dones = {agent: np.array([env.dones[agent] if agent in env.dones else True for env in self.envs],dtype=np.uint8) for agent in self.possible_agents}
-        env_dones = np.array([not (env.agents) for env in self.envs],dtype=np.uint8)
         self.infos = {agent: [env.infos[agent] if agent in env.infos else {} for env in self.envs] for agent in self.possible_agents}
-        return env_dones
 
     def reset(self):
         '''
         returns: list of observations
         '''
-        observations = []
         for env in self.envs:
-            observations.append(env.reset())
+            env.reset()
 
         self.agent_selection = self._agent_selector.reset()
         self.agent_selection = self._find_active_agent()
 
-        env_dones = self._collect_dicts()
+        self._collect_dicts()
+        self.envs_dones = np.zeros(self.num_envs)
+
+    def seed(self, seed=None):
+        for env in self.envs:
+            env.seed(seed)
 
     def observe(self, agent):
         observations = []
@@ -56,19 +58,18 @@ class VectorAECWrapper:
 
     def last(self, observe=True):
         passes = np.array([env.agent_selection != self.agent_selection for env in self.envs],dtype=np.uint8)
-        envs_done = np.array([not (env.agents) for env in self.envs],dtype=np.uint8)
         last_agent = self.agent_selection
         obs = self.observe(last_agent) if observe else None
-        return obs, self._cumulative_rewards[last_agent], self.dones[last_agent], envs_done, passes, self.infos[last_agent]
+        return obs, self._cumulative_rewards[last_agent], self.dones[last_agent], self.envs_dones, passes, self.infos[last_agent]
 
     def step(self, actions, observe=True):
         assert len(actions) == len(self.envs)
         old_agent = self.agent_selection
 
-        envs_done = []
+        envs_dones = []
         for i, (act,env) in enumerate(zip(actions,self.envs)):
             env_done = not env.agents
-            envs_done.append(env_done)
+            envs_dones.append(env_done)
             if env_done:
                 env.reset()
             elif env.agent_selection == old_agent:
@@ -79,4 +80,5 @@ class VectorAECWrapper:
         self.agent_selection = self._find_active_agent()
         new_agent = self.agent_selection
 
-        env_dones = self._collect_dicts()
+        self.envs_dones = np.array(envs_dones)
+        self._collect_dicts()

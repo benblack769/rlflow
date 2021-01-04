@@ -8,6 +8,7 @@ import gym
 from .vector_env import VectorAECWrapper
 import warnings
 import signal
+import traceback
 
 
 class SharedData:
@@ -20,9 +21,10 @@ class SharedData:
 def create_shared_data(num_envs, obs_space, act_space):
     obs_array = mp.Array(np.ctypeslib.as_ctypes_type(obs_space.dtype),int(num_envs*np.prod(obs_space.shape)),lock=False)
     act_array = mp.Array(np.ctypeslib.as_ctypes_type(act_space.dtype),int(num_envs*np.prod(act_space.shape)),lock=False)
-    rew_array = mp.Array(ctypes.c_double,num_envs,lock=False)
+    rew_array = mp.Array(ctypes.c_float,num_envs,lock=False)
+    cum_rew_array = mp.Array(ctypes.c_float,num_envs,lock=False)
     done_array = mp.Array(ctypes.c_bool,num_envs,lock=False)
-    data = (obs_array,act_array,rew_array,done_array)
+    data = (obs_array,act_array,rew_array,cum_rew_array,done_array)
     return data
 
 def create_env_data(num_envs):
@@ -45,10 +47,11 @@ class AgentSharedData:
     def __init__(self, num_envs, obs_space, act_space, data):
         self.num_envs = num_envs
 
-        obs_array,act_array,rew_array,done_array = data
+        obs_array,act_array,rew_array,cum_rew_array,done_array = data
         self.obs = SharedData(obs_array, num_envs, obs_space.shape, obs_space.dtype)
         self.act = SharedData(act_array, num_envs, act_space.shape, act_space.dtype)
         self.rewards = SharedData(rew_array, num_envs, (), np.float32)
+        self._cumulative_rewards = SharedData(cum_rew_array, num_envs, (), np.float32)
         self.dones = SharedData(done_array, num_envs, (), np.uint8)
 
 class EnvSharedData:
@@ -62,44 +65,49 @@ class _SeperableAECWrapper:
     def __init__(self, env_constructors, num_envs):
         self.envs = [env_constructor() for env_constructor in env_constructors]
         self.env = self.envs[0]
-        self.agents = self.env.agents
-        self.agent_indexes = {agent:i for i, agent in enumerate(self.env.agents)}
+        self.possible_agents = self.env.possible_agents
+        self.agent_indexes = {agent:i for i, agent in enumerate(self.env.possible_agents)}
+        self.dead_obss = {agent: np.zeros_like(obs_space.low) for agent, obs_space in self.env.observation_spaces.items()}
 
-    def reset(self, observe):
-        observations = []
+    def reset(self):
         for env in self.envs:
-            observations.append(env.reset(observe))
+            env.reset()
 
-        self.rewards = {agent: [env.rewards[agent] for env in self.envs] for agent in self.agents}
-        self.dones = {agent: [env.dones[agent] for env in self.envs] for agent in self.agents}
-        self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}
-
-        return (observations if observe else None)
+        self.rewards = {agent: [env.rewards.get(agent,0) for env in self.envs] for agent in self.possible_agents}
+        self._cumulative_rewards = {agent: [env._cumulative_rewards.get(agent,0) for env in self.envs] for agent in self.possible_agents}
+        self.dones = {agent: [env.dones.get(agent,True) for env in self.envs] for agent in self.possible_agents}
+        self.infos = {agent: [env.infos.get(agent,{}) for env in self.envs] for agent in self.possible_agents}
 
     def observe(self, agent):
         observations = []
         for env in self.envs:
-            observations.append(env.observe(agent))
+            observations.append(env.observe(agent) if agent in env.dones else self.dead_obss[agent])
         return observations
 
-    def step(self, agent_step, actions, observe):
+    def seed(self, seed=None):
+        for env in self.envs:
+            env.seed(seed)
+
+    def step(self, agent_step, actions):
         assert len(actions) == len(self.envs)
 
-        observations = []
+        env_dones = []
         for act,env in zip(actions,self.envs):
-            observations.append(env.step(act,observe) if env.agent_selection == agent_step else None)
+            env_done = not env.agents
+            env_dones.append(env_done)
+            if env_done:
+                env.reset()
+            elif env.agent_selection == agent_step:
+                if env.dones[agent_step]:
+                    act = None
+                env.step(act)
 
-        self.rewards = {agent: [env.rewards[agent] for env in self.envs] for agent in self.agents}
-        self.dones = {agent: [env.dones[agent] for env in self.envs] for agent in self.agents}
-        self.infos = {agent: [env.infos[agent] for env in self.envs] for agent in self.agents}
+        self.rewards = {agent: [env.rewards.get(agent,0) for env in self.envs] for agent in self.possible_agents}
+        self._cumulative_rewards = {agent: [env._cumulative_rewards.get(agent,0) for env in self.envs] for agent in self.possible_agents}
+        self.dones = {agent: [env.dones.get(agent,True) for env in self.envs] for agent in self.possible_agents}
+        self.infos = {agent: [env.infos.get(agent,{}) for env in self.envs] for agent in self.possible_agents}
 
-        env_dones = [all(env.dones.values()) for env in self.envs]
-
-        for i in range(len(self.envs)):
-            if env_dones[i]:
-                observations[i] = self.envs[i].reset(observe)
-
-        return (observations if observe else None),env_dones
+        return env_dones
 
     def get_agent_indexes(self):
         return [self.agent_indexes[env.agent_selection] for env in self.envs]
@@ -112,12 +120,14 @@ def init_parallel_env():
     signal.signal(signal.SIGINT, sig_handle)
     signal.signal(signal.SIGTERM, sig_handle)
 
-def write_out_data(rewards, dones, num_envs, start_index, shared_data):
+def write_out_data(rewards, cumulative_rews, dones, num_envs, start_index, shared_data):
     for agent in shared_data:
         rews = np.asarray(rewards[agent],dtype=np.float32)
+        cum_rews = np.asarray(cumulative_rews[agent],dtype=np.float32)
         dns = np.asarray(dones[agent],dtype=np.uint8)
         cur_data = shared_data[agent]
         cur_data.rewards.nparr[start_index:start_index+num_envs] = rews
+        cur_data._cumulative_rewards.nparr[start_index:start_index+num_envs] = cum_rews
         cur_data.dones.nparr[start_index:start_index+num_envs] = dns
 
 def write_env_data(env_dones, indexes, num_envs, start_index, shared_data):
@@ -155,7 +165,7 @@ def env_worker(env_constructors, total_num_envs, idx_start, my_num_envs, agent_a
                                     SpaceWrapper(env.env.observation_spaces[agent]),
                                     SpaceWrapper(env.env.action_spaces[agent]),
                                     agent_arrays[agent])
-                            for agent in env.agents}
+                            for agent in env.possible_agents}
 
         env_datas = EnvSharedData(total_num_envs, env_arrays)
 
@@ -163,15 +173,10 @@ def env_worker(env_constructors, total_num_envs, idx_start, my_num_envs, agent_a
         while True:
             instruction, data = pipe.recv()
             if instruction == "reset":
-                do_observe = data
-                obs = env.reset(do_observe)
-                write_out_data(env.rewards,env.dones,my_num_envs,idx_start,shared_datas)
+                env.reset()
+                write_out_data(env.rewards,env._cumulative_rewards,env.dones,my_num_envs,idx_start,shared_datas)
                 env_dones = np.zeros(my_num_envs,dtype=np.uint8)
                 write_env_data(env_dones,env.get_agent_indexes(),my_num_envs, idx_start, env_datas)
-                if do_observe:
-                    # this observation gets overridden if the agent_selection is non-deterministic
-                    agent_observe = env.envs[0].agent_selection
-                    write_obs(obs, my_num_envs, idx_start, shared_datas[agent_observe])
 
                 pipe.send(compress_info(env.infos))
 
@@ -186,20 +191,21 @@ def env_worker(env_constructors, total_num_envs, idx_start, my_num_envs, agent_a
 
                 actions = shared_datas[step_agent].act.nparr[idx_start:idx_start+my_num_envs]
 
-                obs,env_dones = env.step(step_agent, actions, do_observe)
-                write_out_data(env.rewards,env.dones,my_num_envs,idx_start,shared_datas)
+                env_dones = env.step(step_agent, actions)
+                write_out_data(env.rewards,env._cumulative_rewards,env.dones,my_num_envs,idx_start,shared_datas)
                 write_env_data(env_dones, env.get_agent_indexes(), my_num_envs, idx_start, env_datas)
-                if do_observe:
-                    agent_observe = env.envs[0].agent_selection
-                    write_obs(obs, my_num_envs, idx_start, shared_datas[agent_observe])
 
                 pipe.send(compress_info(env.infos))
+            elif instruction == "seed":
+                env.seed(data)
+                pipe.send(True)
             elif instruction == "terminate":
                 return
             else:
                 assert False, "Bad instruction sent to ProcVectorEnv worker"
     except Exception as e:
-        pipe.send(e)
+        tb = traceback.format_exc()
+        pipe.send((e,tb))
 
 class ProcVectorEnv(VectorAECWrapper):
     def __init__(self, env_constructors, num_cpus=None, return_copy=True):
@@ -218,29 +224,29 @@ class ProcVectorEnv(VectorAECWrapper):
         assert callable(env_constructors[0]), "env_constructor must be a callable object (i.e function) that create an environment"
         #self.envs = [env_constructor() for _ in range(num_envs)]
         self.env = env = env_constructors[0]()
-        self.num_agents = self.env.num_agents
-        self.agents = self.env.agents
+        self.max_num_agents = len(self.env.possible_agents)
+        self.possible_agents = self.env.possible_agents
         self.observation_spaces = copy.copy(self.env.observation_spaces)
         self.action_spaces = copy.copy(self.env.action_spaces)
         self.order_is_nondeterministic = False
         self.num_envs = num_envs
 
-        self.agent_indexes = {agent:i for i, agent in enumerate(self.env.agents)}
+        self.agent_indexes = {agent:i for i, agent in enumerate(self.env.possible_agents)}
 
-        self._agent_selector = agent_selector(self.agents)
+        self._agent_selector = agent_selector(self.possible_agents)
 
         all_arrays = {agent: create_shared_data(
                                 num_envs,
                                 SpaceWrapper(self.observation_spaces[agent]),
                                 SpaceWrapper(self.action_spaces[agent]),
                             )
-                            for agent in self.agents}
+                            for agent in self.possible_agents}
 
         self.shared_datas = {agent: AgentSharedData(num_envs,
                                     SpaceWrapper(env.observation_spaces[agent]),
                                     SpaceWrapper(env.action_spaces[agent]),
                                     all_arrays[agent])
-                            for agent in env.agents}
+                            for agent in env.possible_agents}
 
         env_arrays = create_env_data(num_envs)
 
@@ -274,8 +280,10 @@ class ProcVectorEnv(VectorAECWrapper):
         all_data = []
         for cin in self.con_ins:
             data = cin.recv()
-            if isinstance(data,Exception):
-                raise data
+            if isinstance(data,tuple):
+                err,tb = data
+                print(tb)
+                raise RuntimeError("ProcVectorEnv received error from subprocess (look up there ^^^ for error)")
             all_data.append(data)
         return all_data
 
@@ -285,10 +293,10 @@ class ProcVectorEnv(VectorAECWrapper):
         else:
             return data
 
-    def _load_next_data(self, observe, reset):
+    def _load_next_data(self, reset):
         all_compressed_info = self._receive_info()
 
-        all_info = decompress_info(self.agents, self.num_envs, self.env_starts, all_compressed_info)
+        all_info = decompress_info(self.possible_agents, self.num_envs, self.env_starts, all_compressed_info)
 
         self.agent_selection = self._agent_selector.reset() if reset else self._agent_selector.next()
         self.agent_selection = self._find_active_agent()
@@ -299,22 +307,26 @@ class ProcVectorEnv(VectorAECWrapper):
         assert not np.all(passes), "something went wrong with finding agent"
         if np.any(passes) or self.order_is_nondeterministic:
             warnings.warn("agent order of environment is werid, so the ProcVectorEnv has to do more work, expect it to be slower than expected")
-            if observe:
-                obs = self.observe(self.agent_selection)
             self.order_is_nondeterministic = True
 
-        self.dones = {agent: self.copy(self.shared_datas[agent].dones.nparr) for agent in self.agents}
-        self.rewards = {agent: self.copy(self.shared_datas[agent].rewards.nparr) for agent in self.agents}
+        self.dones = {agent: self.copy(self.shared_datas[agent].dones.nparr) for agent in self.possible_agents}
+        self.rewards = {agent: self.copy(self.shared_datas[agent].rewards.nparr) for agent in self.possible_agents}
+        self._cumulative_rewards = {agent: self.copy(self.shared_datas[agent]._cumulative_rewards.nparr) for agent in self.possible_agents}
         self.infos = all_info
         env_dones = self.env_datas.env_dones.nparr
+        self.passes = self.copy(passes)
+        self.env_dones = self.copy(env_dones)
 
-        return (self.copy(obs) if observe else None), self.copy(passes), self.copy(env_dones)
+    def last(self, observe=True):
+        last_agent = self.agent_selection
+        obs = self.observe(last_agent) if observe else None
+        return obs, self._cumulative_rewards[last_agent], self.dones[last_agent], self.env_dones, self.passes, self.infos[last_agent]
 
     def reset(self, observe=True):
         for cin in self.con_ins:
             cin.send(("reset", observe))
 
-        return self._load_next_data(observe, True)[:2]
+        self._load_next_data(True)
 
     def step(self, actions, observe=True):
         step_agent = self.agent_selection
@@ -323,7 +335,7 @@ class ProcVectorEnv(VectorAECWrapper):
         for cin in self.con_ins:
             cin.send(("step", (step_agent, observe)))
 
-        return self._load_next_data(observe, False)
+        self._load_next_data(False)
 
     def observe(self, agent):
         for cin in self.con_ins:
@@ -334,6 +346,12 @@ class ProcVectorEnv(VectorAECWrapper):
 
         obs = self.copy(self.shared_datas[self.agent_selection].obs.nparr)
         return obs
+
+    def seed(self, seed):
+        for cin in self.con_ins:
+            cin.send(("seed",seed))
+
+        self._receive_info()
 
     def __del__(self):
         for cin in self.con_ins:
