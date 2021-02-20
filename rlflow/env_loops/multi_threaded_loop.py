@@ -122,6 +122,9 @@ def run_loop(
         num_actors=1,
         ):
 
+    if act_steps_until_learn is None:
+        act_steps_until_learn = data_store_size//2
+
     terminate_event = mp.Event()
     start_learn_event = mp.Event()
 

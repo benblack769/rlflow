@@ -1,6 +1,6 @@
 from basic_example import FCPolicy, DQNLearner
-from rlflow.env_loops.efficient_rollout_loop import run_loop
-#from rlflow.env_loops.single_threaded_env_loop import run_loop
+# from rlflow.env_loops.multi_threaded_loop import run_loop
+from rlflow.env_loops.single_threaded_env_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
@@ -12,8 +12,8 @@ from rlflow.utils.saver import Saver, load_latest
 from gym.vector import SyncVectorEnv
 
 import supersuit
-from pettingzoo.mpe import simple_spread_v0
-from rlflow.vector import aec_to_markov, MarkovVectorEnv
+from pettingzoo.mpe import simple_spread_v2
+from supersuit import pettingzoo_env_to_vec_env_v0
 
 # def env_fn():
 #     env = gym.make("LunarLander-v2")
@@ -21,15 +21,17 @@ from rlflow.vector import aec_to_markov, MarkovVectorEnv
 #     return env
 def env_fn():
     #env = gym.make("CartPole-v0")#
-    env = simple_spread_v0.env()
+    env = simple_spread_v2.parallel_env()
     # print(env.action_spaces.values())
     # exit(0)
-    env = supersuit.aec_wrappers.pad_observations(env)
-    env = supersuit.aec_wrappers.pad_action_space(env)
+    env = supersuit.pad_observations_v0(env)
+    env = supersuit.pad_action_space_v0(env)
     #env = supersuit.aec_wrappers.continuous_actions(env)
-    markov_env = aec_to_markov(env)
-    venv = MarkovVectorEnv(markov_env)
+    venv = pettingzoo_env_to_vec_env_v0(env)
     return venv
+
+def env_fn():
+    return gym.make("CartPole-v0")
 
 def main():
     env = env_fn()
@@ -40,7 +42,8 @@ def main():
     policy_fn = lambda device: lambda: FCPolicy(obs_size, act_size, 512, device)
     data_store_size = 12800
     batch_size = 64
-    n_envs = 128*4
+    n_envs = 8
+    n_cpus = 0
     logger = make_logger("log")
     save_folder="basic_test_save"
 
@@ -48,7 +51,7 @@ def main():
         logger,
         lambda: DQNLearner(policy_fn("cuda"), 0.001, 0.99, logger, device),
         OccasionalUpdate(10, policy_fn("cpu")),
-        policy_fn("cuda"),
+        lambda: StatelessActor(policy_fn("cuda")()),
         env_fn,
         Saver(save_folder),
         lambda: TransitionAdder(env.observation_space, env.action_space),
@@ -57,7 +60,7 @@ def main():
         batch_size,
         num_env_ids=n_envs,
         log_frequency=5,
-        num_cpus=8,
-        act_steps_until_learn=800000
+        num_cpus=n_cpus,
+        act_steps_until_learn=8000
     )
 main()

@@ -32,17 +32,26 @@ class AtariPolicy(torch.nn.Module):
         for source,dest in zip(params, self.model.parameters()):
             dest.data = torch.tensor(source, device=self.device)
 
+class Scale(torch.nn.Module):
+    def __init__(self, sval):
+        super().__init__()
+        self.sval = sval
+
+    def forward(self, observations):
+        return observations * self.sval
+from all.nn import Linear0
+
 class FCPolicy(torch.nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim, device):
         super().__init__()
         model = torch.nn.Sequential(
             torch.nn.Linear(in_dim, hidden_dim),
+            # torch.nn.ReLU(),
+            # torch.nn.Linear(hidden_dim, hidden_dim),
+            # torch.nn.ReLU(),
+            # torch.nn.Linear(hidden_dim, hidden_dim),
             torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, out_dim),
+            Linear0(hidden_dim, out_dim),
         )
         self.out_dim = out_dim
         self.model = model.to(device)
