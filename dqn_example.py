@@ -49,9 +49,10 @@ default_hyperparameters = {
 
 
 class DQNPolicy:
-    def __init__(self, env, device="cpu"):
+    def __init__(self, env, logger, device="cpu"):
         self.out_dim = out_dim = env.action_space.n
         self.device = device
+        self.logger = logger
         self.hyperparameters = hyperparameters = default_hyperparameters
         self.model = hyperparameters['model_constructor'](env).to(device)
         writer = DummyWriter()
@@ -70,6 +71,7 @@ class DQNPolicy:
             greedy = torch.argmax(self.model(observations),axis=1)#.detach().cpu().numpy()
             rand_vals = torch.randint(self.out_dim,size=(len(observations),),device=self.device)
             epsilon = self.epsilon._get_value()
+            self.logger.record("epsilon", epsilon)
             pick_rand = torch.rand((len(observations),),device=self.device) < epsilon
             actions = torch.where(pick_rand, rand_vals, greedy)
         return actions.cpu().detach().numpy()
@@ -100,11 +102,6 @@ class DQNLearner:
             writer=writer
         )
 
-        replay_buffer = ExperienceReplayBuffer(
-            self.hyperparameters['replay_buffer_size'],
-            device=self.device
-        )
-
     def learn_step(self, idxs, transition_batch, weights):
         Otm1, old_action, env_rew, done, Ot = transition_batch
         batch_size = len(Otm1)
@@ -114,17 +111,19 @@ class DQNLearner:
         states = StateArray({
             'observation': torch.tensor(Otm1,device=self.device),
             'reward': rewards,
-            'done': dones,
-            'mask': 1-dones,
+            'done': torch.zeros_like(dones),
+            'mask': torch.ones_like(dones),
         },shape=(batch_size,))
         next_states = StateArray({
             'observation': torch.tensor(Ot,device=self.device),
+            'done': dones,
             'mask': 1-dones,
         },shape=(batch_size,))
         # forward pass
         values = self.q(states, actions)
         # compute targets
         targets = rewards + self.discount_factor * torch.max(self.q.target(next_states), dim=1)[0]
+        # print(values)
         # compute loss
         loss = mse_loss(values, targets)
         # backward pass

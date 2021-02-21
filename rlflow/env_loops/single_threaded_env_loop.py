@@ -24,10 +24,11 @@ def run_loop(
         replay_sampler,
         data_store_size,
         batch_size,
+        act_steps_until_learn,
+        steps_per_update,
         priority_updater=NoUpdater(),
         num_env_ids=1,
         num_cpus=0,
-        act_steps_until_learn=None,
         log_frequency=100,
         max_learn_steps=2**100,
         log_callback=noop,
@@ -41,6 +42,7 @@ def run_loop(
 
     example_adder = adder_fn()
     dones = np.zeros(num_envs,dtype=np.uint8)
+    rews = np.zeros(num_envs,dtype=np.float32)
     infos = [{} for _ in range(num_envs)]
 
     transition_example = example_adder.get_example_output()
@@ -75,18 +77,18 @@ def run_loop(
         policy_delayer.learn_step(learner.policy)
         policy_delayer.actor_step(actor.policy)
 
-        cur_act_steps = max(1,batch_size//num_envs)
-        for i in range(cur_act_steps):
+        for i in range(steps_per_update):
             actions, actor_info = actor.step(obss, dones, infos)
-            obss, rews, dones, infos = vec_env.step(actions)
             for i in range(len(obss)):
                 obs,act,rew,done,info,act_info = obss[i], actions[i], rews[i], dones[i], infos[i], actor_info[i]
                 adders[i].add(obs,act,rew,done,info,act_info)
                 log_adders[i].add(obs,act,rew,done,info,act_info)
 
+            obss, rews, dones, infos = vec_env.step(actions)
+
             data_manager.receive_new_entries()
 
-        total_act_steps += cur_act_steps * num_envs
+        total_act_steps += steps_per_update * num_envs
 
         if total_act_steps >= act_steps_until_learn:
             learn_idxs, learn_weights, learn_batch = data_manager.sample_data(batch_size)

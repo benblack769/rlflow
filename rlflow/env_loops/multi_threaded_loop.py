@@ -90,12 +90,12 @@ def run_actor_loop(terminate_event, start_learn_event, actor_fn, adder_fn, log_a
 
         actions, actor_info = actor.step(obss, dones, infos)
 
-        obss, rews, dones, infos = vec_env.step(actions)
-
         for i in range(len(obss)):
             obs,act,rew,done,info,act_info = obss[i], actions[i], rews[i], dones[i], infos[i], actor_info[i]
             adders[i].add(obs,act,rew,done,info,act_info)
             log_adders[i].add(obs,act,rew,done,info,act_info)
+
+        obss, rews, dones, infos = vec_env.step(actions)
 
 
 def noop(x):

@@ -3,7 +3,7 @@ from rlflow.utils.space_wrapper import SpaceWrapper
 
 class TransitionAdder:
     def __init__(self, observation_space, action_space):
-        self.last_observation = None
+        self.last_data = None
         self.on_generate = None
         self.observation_space = SpaceWrapper(observation_space)
         self.action_space = SpaceWrapper(action_space)
@@ -24,9 +24,12 @@ class TransitionAdder:
     def add(self, obs, action, rew, done, info, actor_info):
         assert self.on_generate is not None, "need to call set_generate_callback before add"
         obs = np.copy(obs)
-        if self.last_observation is None:
-            self.last_observation = obs
+        if self.last_data is None:
+            self.last_data = obs, action
         else:
-            transition = (obs, action, rew, done, self.last_observation)
+            # vector env has reset obs for last obs, so set it to zero instead of being confusing
+            trans_obs, tras_action = self.last_data
+            trans_next_obs = np.zeros_like(obs) if done else obs
+            transition = (trans_obs, tras_action, rew, done, trans_next_obs)
             self.on_generate(transition)
-            self.last_observation = None if done else obs
+            self.last_data = obs, action

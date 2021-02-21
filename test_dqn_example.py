@@ -15,6 +15,7 @@ from rlflow.env_loops.single_threaded_env_loop import run_loop
 # from rlflow.env_loops.multi_threaded_loop import run_loop
 import gym
 from rlflow.policy_delayer.occasional_update import OccasionalUpdate
+from rlflow.policy_delayer.no_update import NoUpdate
 from rlflow.actors.single_agent_actor import StatelessActor
 from rlflow.adders.transition_adder import TransitionAdder
 from rlflow.selectors import DensitySampleScheme, UniformSampleScheme
@@ -41,30 +42,30 @@ def main():
     env = env_fn()
     cpu_count = mp.cpu_count()
     # cpu_count = 0
-    num_envs = 32
+    num_envs = 1
     num_cpus = 0
     num_targets = 1
-    model_features = 512
     data_store_size = 10000
-    batch_size = 512
-    max_grad_norm = 0.1
-    device="cuda"
+    batch_size = 64
+    device="cpu"
     num_actors = 1
-    max_learn_steps = 100000
+    max_learn_steps = 40000
 
     save_folder = "savedata/"
     def policy_fn_dev(device):
-        policy = DQNPolicy(env, device)
+        policy = DQNPolicy(env, logger, device)
         # load_latest(save_folder, policy)
         return policy
 
     priority_updater = NoUpdater()
     logger = make_logger("log")
+    policy = policy_fn_dev(device)
     run_loop(
         logger,
-        lambda: DQNLearner(policy_fn_dev(device), logger, env.action_space.n, device=device),
-        OccasionalUpdate(100, lambda: policy_fn_dev("cpu")),
-        lambda: StatelessActor(policy_fn_dev(device)),
+        lambda: DQNLearner(policy, logger, env.action_space.n, device=device),
+        NoUpdate(),
+        # OccasionalUpdate(100, lambda: policy_fn_dev("cpu")),
+        lambda: StatelessActor(policy),
         env_fn,
         Saver(save_folder),
         # MakeCPUAsyncConstructor(n_cpus),
@@ -72,6 +73,8 @@ def main():
         UniformSampleScheme(data_store_size),
         data_store_size,
         batch_size,
+        act_steps_until_learn=1000,
+        steps_per_update=1,
         num_cpus=num_cpus,
         num_env_ids=num_envs,
         priority_updater=priority_updater,
